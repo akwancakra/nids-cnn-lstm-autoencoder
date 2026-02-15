@@ -43,7 +43,7 @@ preprocess:
   write_combined: false
 
 training:
-  force_cpu: true
+  force_cpu: false
   batch_size: 128
   epochs: 100
   learning_rate: 0.001

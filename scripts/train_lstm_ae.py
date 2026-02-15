@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import sys
 import time
@@ -91,13 +92,14 @@ def main() -> None:
 
     seed = int(cfg["preprocess"]["random_seed"])
     np.random.seed(seed)
-    # DirectML on Windows can crash on stateless random ops during layer init.
-    # Keep NumPy seed for partial reproducibility; skip tf seed in GPU mode.
-    if force_cpu:
+    has_directml_plugin = importlib.util.find_spec("tensorflow_directml_plugin") is not None
+    if force_cpu or not has_directml_plugin:
         tf.random.set_seed(seed)
+        logging.info("[STAGE] tf.random.set_seed(%d) enabled.", seed)
     else:
         logging.warning(
-            "Skipping tf.random.set_seed in GPU mode to avoid DirectML stateless random kernel conflict."
+            "Skipping tf.random.set_seed because tensorflow_directml_plugin is active "
+            "(avoids DirectML stateless random kernel conflict)."
         )
 
     data_dir = Path(cfg["paths"]["data_processed"])
