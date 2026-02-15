@@ -1,0 +1,53 @@
+# Python cache and virtual env
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Jupyter cache
+.ipynb_checkpoints/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+
+# Secrets
+kaggle.json
+*.env
+.env
+
+# Heavy project artifacts
+data/raw/
+data/processed/
+models/
+results/
+reports/
+
+# Optional local notes/artifacts
+*.log
+*.tmp
+*.bak
+
+# Large binary/model/archive files
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.keras
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.npz
+*.npy
+*.pkl
+*.joblib
+*.zip
+*.7z
+*.tar
+*.gz
+*.bz2
+*.xz

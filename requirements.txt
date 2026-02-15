@@ -1,0 +1,11 @@
+# Core
+numpy<2
+pandas
+scikit-learn
+matplotlib
+seaborn
+pyyaml
+joblib
+
+# Deep learning
+tensorflow==2.10.1
