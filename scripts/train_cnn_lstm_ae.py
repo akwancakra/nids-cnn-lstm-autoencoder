@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -76,6 +77,26 @@ def to_serializable_history(history_dict: dict) -> dict:
     return out
 
 
+def find_latest_periodic_checkpoint(checkpoint_dir: Path) -> tuple[Path | None, int]:
+    pattern = re.compile(r"checkpoint_epoch_(\d+)\.keras$")
+    latest_path: Path | None = None
+    latest_epoch = 0
+
+    if not checkpoint_dir.exists():
+        return None, 0
+
+    for ckpt in checkpoint_dir.glob("checkpoint_epoch_*.keras"):
+        match = pattern.fullmatch(ckpt.name)
+        if not match:
+            continue
+        epoch_num = int(match.group(1))
+        if epoch_num > latest_epoch:
+            latest_epoch = epoch_num
+            latest_path = ckpt
+
+    return latest_path, latest_epoch
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.yaml")
@@ -113,9 +134,11 @@ def main() -> None:
     data_dir = Path(cfg["paths"]["data_processed"])
     models_dir = Path(cfg["paths"]["models_dir"]) / "cnn_lstm_ae"
     results_dir = Path(cfg["paths"]["results_dir"]) / "logs"
+    checkpoint_dir = models_dir / "checkpoints"
 
     ensure_dir(models_dir)
     ensure_dir(results_dir)
+    ensure_dir(checkpoint_dir)
 
     shard_root = Path(cfg["preprocess"].get("shard_dir", data_dir / "shards"))
     train_manifest_path = shard_root / "cic" / "train" / "manifest.json"
@@ -170,19 +193,34 @@ def main() -> None:
     # Try to resume from checkpoint (useful if Colab disconnects)
     checkpoint_path = models_dir / "best_model.keras"
     initial_epoch = 0
-    
-    if checkpoint_path.exists():
+    history_path = results_dir / "cnn_lstm_history.json"
+    resume_path = None
+
+    latest_periodic_ckpt, latest_periodic_epoch = find_latest_periodic_checkpoint(checkpoint_dir)
+    if latest_periodic_ckpt is not None:
+        resume_path = latest_periodic_ckpt
+        initial_epoch = latest_periodic_epoch
+        logging.info(
+            "[CHECKPOINT] Found periodic checkpoint: %s (epoch=%d)",
+            latest_periodic_ckpt,
+            latest_periodic_epoch,
+        )
+    elif checkpoint_path.exists():
+        resume_path = checkpoint_path
+        logging.info("[CHECKPOINT] Found existing checkpoint: %s", checkpoint_path)
+
+    if resume_path is not None:
         try:
-            logging.info("[CHECKPOINT] Found existing checkpoint: %s", checkpoint_path)
-            model = keras.models.load_model(checkpoint_path)
+            model = keras.models.load_model(resume_path)
             logging.info("[CHECKPOINT] Loaded model from checkpoint, resuming training")
-            
-            # Try to load history to determine initial_epoch
-            history_path = results_dir / "cnn_lstm_history.json"
+
+            # History is optional. If present, keep the larger epoch index.
             if history_path.exists():
                 prev_history = load_json(history_path)
                 if "loss" in prev_history:
-                    initial_epoch = len(prev_history["loss"])
+                    hist_epoch = len(prev_history["loss"])
+                    if hist_epoch > initial_epoch:
+                        initial_epoch = hist_epoch
                     logging.info("[CHECKPOINT] Resuming from epoch %d", initial_epoch)
         except Exception as e:
             logging.warning("[CHECKPOINT] Could not load checkpoint, building new model: %s", e)
@@ -196,10 +234,6 @@ def main() -> None:
     lr = float(cfg["training"]["learning_rate"])
     model.compile(optimizer=keras.optimizers.Adam(learning_rate=lr), loss="mse")
 
-    # Checkpoint directory for periodic saves
-    checkpoint_dir = models_dir / "checkpoints"
-    ensure_dir(checkpoint_dir)
-    
     # Custom callback for periodic checkpoint (every N epochs)
     class PeriodicCheckpoint(keras.callbacks.Callback):
         def __init__(self, checkpoint_dir, period=5):
@@ -234,12 +268,21 @@ def main() -> None:
         PeriodicCheckpoint(checkpoint_dir, period=5),
     ]
 
+    target_epochs = int(cfg["training"]["epochs"])
+    if initial_epoch >= target_epochs:
+        logging.info(
+            "[DONE] Training already reached target epochs (initial_epoch=%d, target=%d). Nothing to run.",
+            initial_epoch,
+            target_epochs,
+        )
+        return
+
     t0 = time.time()
     if use_shards:
         history = model.fit(
             train_ds,
             validation_data=val_ds,
-            epochs=int(cfg["training"]["epochs"]),
+            epochs=target_epochs,
             initial_epoch=initial_epoch,
             steps_per_epoch=steps_per_epoch,
             validation_steps=val_steps,
@@ -251,7 +294,7 @@ def main() -> None:
             x_train,
             x_train,
             validation_data=(x_val, x_val),
-            epochs=int(cfg["training"]["epochs"]),
+            epochs=target_epochs,
             initial_epoch=initial_epoch,
             batch_size=int(cfg["training"]["batch_size"]),
             shuffle=True,
@@ -264,10 +307,10 @@ def main() -> None:
     save_json(results_dir / "cnn_lstm_history.json", to_serializable_history(history.history))
     save_json(results_dir / "config_snapshot.json", cfg)
     best_val = min(history.history.get("val_loss", [float("nan")]))
-    last_epoch = len(history.history.get("loss", []))
+    completed_epochs = initial_epoch + len(history.history.get("loss", []))
     logging.info(
         "[DONE] Train CNN-LSTM AE finished | epochs=%d best_val_loss=%.6f duration=%s",
-        last_epoch,
+        completed_epochs,
         best_val,
         format_duration(time.time() - t0),
     )
