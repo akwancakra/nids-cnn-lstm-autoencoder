@@ -13,7 +13,7 @@ from typing import Iterable, List, Optional, Tuple
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -33,11 +33,75 @@ from scripts.utils import (
 
 
 def get_scaler(name: str):
-    if name.lower() == "standard":
+    name = name.lower()
+    if name == "standard":
         return StandardScaler()
-    if name.lower() == "minmax":
+    if name == "minmax":
         return MinMaxScaler()
+    if name == "robust":
+        return RobustScaler()
     raise ValueError(f"Unknown scaler: {name}")
+
+
+def select_features_by_statistics(
+    sample_array: np.ndarray | list[list[float]],
+    features: List[str],
+    enable_nzv: bool,
+    nzv_threshold: float,
+    enable_corr: bool,
+    corr_threshold: float,
+) -> Tuple[List[str], dict]:
+    x = np.asarray(sample_array, dtype=np.float32)
+    if x.ndim != 2:
+        raise ValueError("sample_array must be 2D")
+    if x.shape[1] != len(features):
+        raise ValueError("sample_array columns must match features length")
+
+    keep_mask = np.ones(len(features), dtype=bool)
+    dropped_nzv: List[str] = []
+    dropped_corr: List[str] = []
+
+    if enable_nzv:
+        var = np.var(x, axis=0)
+        nzv_mask = var <= nzv_threshold
+        for idx in np.where(nzv_mask)[0]:
+            dropped_nzv.append(features[idx])
+        keep_mask &= ~nzv_mask
+
+    if enable_corr:
+        kept_idx = np.where(keep_mask)[0]
+        if kept_idx.size > 1:
+            x_kept = x[:, kept_idx]
+            corr = np.corrcoef(x_kept, rowvar=False)
+            corr = np.nan_to_num(corr, nan=0.0)
+            to_drop_local = set()
+            for i in range(corr.shape[0]):
+                if i in to_drop_local:
+                    continue
+                for j in range(i + 1, corr.shape[0]):
+                    if abs(corr[i, j]) >= corr_threshold:
+                        # Keep earlier feature deterministically, drop later one.
+                        to_drop_local.add(j)
+            for local_j in sorted(to_drop_local):
+                global_idx = kept_idx[local_j]
+                keep_mask[global_idx] = False
+                dropped_corr.append(features[global_idx])
+
+    selected = [f for i, f in enumerate(features) if keep_mask[i]]
+    if not selected:
+        raise ValueError("All features were dropped by statistical filtering.")
+
+    report = {
+        "input_feature_count": len(features),
+        "selected_feature_count": len(selected),
+        "dropped_nzv": dropped_nzv,
+        "dropped_corr": dropped_corr,
+        "enable_nzv": bool(enable_nzv),
+        "nzv_threshold": float(nzv_threshold),
+        "enable_corr": bool(enable_corr),
+        "corr_threshold": float(corr_threshold),
+    }
+    return selected, report
 
 
 def load_header_columns(csv_path: Path) -> List[str]:
@@ -233,6 +297,53 @@ def fit_scaler_on_cic(
                 scaler.partial_fit(x[benign_mask])
 
 
+def collect_benign_sample_from_cic(
+    csv_files: List[Path],
+    features: List[str],
+    label_col: str,
+    benign_label: str,
+    fillna_value: float,
+    sample_frac: float | None,
+    max_rows_per_file: int | None,
+    chunksize: int | None,
+    sample_rows_limit: int,
+    column_mapper: Optional[dict[str, str]] = None,
+) -> np.ndarray:
+    if sample_rows_limit <= 0:
+        return np.empty((0, len(features)), dtype=np.float32)
+
+    collected: List[np.ndarray] = []
+    total = 0
+    for csv_path in csv_files:
+        for chunk in iter_chunks(
+            csv_path,
+            features + [label_col],
+            chunksize,
+            sample_frac,
+            max_rows_per_file,
+            column_mapper=column_mapper,
+        ):
+            x, y = prepare_chunk(chunk, features, label_col, fillna_value)
+            y = pd.Series(y).astype(str).str.upper().to_numpy()
+            benign_x = x[y == benign_label.upper()]
+            if benign_x.shape[0] == 0:
+                continue
+
+            remaining = sample_rows_limit - total
+            if remaining <= 0:
+                break
+            if benign_x.shape[0] > remaining:
+                benign_x = benign_x[:remaining]
+            collected.append(benign_x)
+            total += benign_x.shape[0]
+        if total >= sample_rows_limit:
+            break
+
+    if not collected:
+        return np.empty((0, len(features)), dtype=np.float32)
+    return np.concatenate(collected, axis=0)
+
+
 def iter_windows_from_file(
     csv_path: Path,
     features: List[str],
@@ -392,6 +503,12 @@ def main() -> None:
     shard_size = int(cfg["preprocess"].get("shard_size", 50000))
     write_combined = bool(cfg["preprocess"].get("write_combined", False))
     scaler_name = cfg["preprocess"]["scaler"]
+    feature_filter_cfg = cfg["preprocess"].get("feature_filter", {})
+    filter_enable_nzv = bool(feature_filter_cfg.get("enable_nzv", False))
+    filter_nzv_threshold = float(feature_filter_cfg.get("nzv_threshold", 1e-6))
+    filter_enable_corr = bool(feature_filter_cfg.get("enable_corr", False))
+    filter_corr_threshold = float(feature_filter_cfg.get("corr_threshold", 0.95))
+    filter_sample_rows = int(feature_filter_cfg.get("sample_rows_limit", 100000))
 
     if not split_by_file:
         logging.warning("split_by_file is disabled, but streaming mode requires file split. Using file split.")
@@ -419,6 +536,38 @@ def main() -> None:
     features = sorted(set(cic_features).intersection(cse_features))
     if not features:
         raise ValueError("No shared features between CIC-IDS2017 and CSE-CIC-IDS2018")
+
+    if filter_enable_nzv or filter_enable_corr:
+        logging.info("[STAGE] Applying statistical feature filter on CIC benign sample...")
+        sample_x = collect_benign_sample_from_cic(
+            cic_files,
+            features,
+            cic_label_col,
+            benign_label,
+            fillna_value,
+            sample_frac,
+            max_rows_per_file,
+            chunksize,
+            sample_rows_limit=filter_sample_rows,
+        )
+        if sample_x.shape[0] == 0:
+            raise ValueError("Feature filter enabled, but no benign sample rows were collected.")
+        features, filter_report = select_features_by_statistics(
+            sample_array=sample_x,
+            features=features,
+            enable_nzv=filter_enable_nzv,
+            nzv_threshold=filter_nzv_threshold,
+            enable_corr=filter_enable_corr,
+            corr_threshold=filter_corr_threshold,
+        )
+        save_json(data_processed / "feature_filter_report.json", filter_report)
+        logging.info(
+            "[PROGRESS] Feature filter | input=%d selected=%d dropped_nzv=%d dropped_corr=%d",
+            filter_report["input_feature_count"],
+            filter_report["selected_feature_count"],
+            len(filter_report["dropped_nzv"]),
+            len(filter_report["dropped_corr"]),
+        )
 
     logging.info("Feature intersection count: %d", len(features))
     logging.info("[STAGE] %s", "Preprocess started")

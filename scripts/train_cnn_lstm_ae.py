@@ -236,7 +236,11 @@ def main() -> None:
     logging.info("[STAGE] Train CNN-LSTM AE | input_shape=%s", input_shape)
 
     lr = float(cfg["training"]["learning_rate"])
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=lr), loss="mse")
+    clipnorm = cfg.get("training", {}).get("clipnorm")
+    optimizer_kwargs = {"learning_rate": lr}
+    if clipnorm is not None:
+        optimizer_kwargs["clipnorm"] = float(clipnorm)
+    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss="mse")
 
     # Custom callback for periodic checkpoint (every N epochs)
     class PeriodicCheckpoint(keras.callbacks.Callback):
@@ -255,13 +259,7 @@ def main() -> None:
         keras.callbacks.EarlyStopping(
             monitor="val_loss",
             patience=int(cfg["training"]["early_stopping_patience"]),
-            restore_best_weights=True,
-        ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=float(cfg["training"]["reduce_lr_factor"]),
-            patience=int(cfg["training"]["reduce_lr_patience"]),
-            min_lr=float(cfg["training"]["min_lr"]),
+            restore_best_weights=bool(cfg["training"].get("restore_best_weights", True)),
         ),
         keras.callbacks.ModelCheckpoint(
             filepath=str(models_dir / "best_model.keras"),
@@ -271,6 +269,37 @@ def main() -> None:
         ),
         PeriodicCheckpoint(checkpoint_dir, period=5),
     ]
+
+    scheduler_mode = str(cfg["training"].get("lr_scheduler", "reduce_on_plateau")).lower()
+    if scheduler_mode == "reduce_on_plateau":
+        callbacks.append(
+            keras.callbacks.ReduceLROnPlateau(
+                monitor="val_loss",
+                factor=float(cfg["training"]["reduce_lr_factor"]),
+                patience=int(cfg["training"]["reduce_lr_patience"]),
+                min_lr=float(cfg["training"]["min_lr"]),
+            )
+        )
+    elif scheduler_mode == "cosine":
+        min_lr = float(cfg["training"]["min_lr"])
+        max_lr = lr
+        warmup_epochs = int(cfg["training"].get("warmup_epochs", 0))
+        total_epochs = int(cfg["training"]["epochs"])
+
+        def cosine_with_optional_warmup(epoch: int, _current_lr: float) -> float:
+            if warmup_epochs > 0 and epoch < warmup_epochs:
+                # Linear warmup from min_lr to max_lr.
+                return min_lr + ((max_lr - min_lr) * ((epoch + 1) / warmup_epochs))
+            denom = max(1, total_epochs - warmup_epochs)
+            progress = (epoch - warmup_epochs) / denom
+            progress = min(max(progress, 0.0), 1.0)
+            return min_lr + (0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * progress)))
+
+        callbacks.append(keras.callbacks.LearningRateScheduler(cosine_with_optional_warmup, verbose=0))
+    elif scheduler_mode == "none":
+        pass
+    else:
+        raise ValueError(f"Unknown training.lr_scheduler: {scheduler_mode}")
 
     target_epochs = int(cfg["training"]["epochs"])
     if initial_epoch >= target_epochs:

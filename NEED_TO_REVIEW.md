@@ -2,6 +2,16 @@
 
 ## Prioritas Tinggi
 
+- [ ] Tegaskan status target metrik sebagai benchmark, bukan syarat mutlak "lulus/gagal penelitian".
+  - Prinsip interpretasi:
+    - target angka (mis. F1, AUC, FPR) dipakai sebagai acuan evaluasi berbasis literatur dan baseline internal
+    - jika target tidak tercapai, penelitian **tetap valid** selama analisis penyebab, trade-off, dan batasan dijelaskan dengan kuat
+    - kontribusi utama bisa tetap pada evaluasi generalisasi, temuan domain gap, dan rekomendasi perbaikan model
+  - Narasi yang disarankan di naskah:
+    - bedakan `target ideal` vs `minimum acceptable performance`
+    - hindari kalimat yang membuat penelitian terkesan gagal total hanya karena tidak menyentuh satu angka target
+    - tekankan bahwa hasil negatif/di bawah target adalah temuan empiris yang bernilai untuk penelitian lanjutan
+
 - [ ] Finalisasi positioning eksperimen: **zero-shot vs few-shot adaptation**.
   - Definisi yang dipakai:
     - `Zero-shot`: model dilatih di CIC-IDS2017 lalu diuji di CSE-CIC-IDS2018 tanpa fine-tuning/retraining.

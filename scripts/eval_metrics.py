@@ -152,6 +152,87 @@ def compute_threshold_from_shards(model, shard_files, percentile, batch_size, sa
     return thr
 
 
+def collect_error_sample_from_shards(
+    model,
+    shard_files,
+    batch_size: int,
+    sample_size: int,
+    benign_only: bool,
+) -> np.ndarray:
+    sampler = ReservoirSampler(sample_size)
+    for shard_path in shard_files:
+        data = np.load(shard_path)
+        x = data["x"]
+        if benign_only:
+            y = data["y"]
+            x = x[y == 0]
+            if x.shape[0] == 0:
+                continue
+        errs = reconstruction_errors(model, x, batch_size=batch_size)
+        sampler.update(errs, None)
+    return sampler.get()[0]
+
+
+def sample_target_benign_windows(
+    shard_files,
+    frac: float,
+    max_samples: int,
+    seed: int,
+) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    collected = []
+    total = 0
+    for shard_path in shard_files:
+        data = np.load(shard_path)
+        x = data["x"]
+        y = data["y"]
+        benign_x = x[y == 0]
+        if benign_x.shape[0] == 0:
+            continue
+        keep = rng.random(benign_x.shape[0]) < frac
+        sampled = benign_x[keep]
+        if sampled.shape[0] == 0:
+            continue
+        if max_samples > 0 and total + sampled.shape[0] > max_samples:
+            sampled = sampled[: max_samples - total]
+        if sampled.shape[0] == 0:
+            break
+        collected.append(sampled)
+        total += sampled.shape[0]
+        if max_samples > 0 and total >= max_samples:
+            break
+    if not collected:
+        return np.empty((0, 0, 0), dtype=np.float32)
+    return np.concatenate(collected, axis=0)
+
+
+def compute_threshold_value(
+    method: str,
+    source_errors: np.ndarray,
+    target_benign_errors: np.ndarray | None,
+    percentile: float,
+    k_sigma: float,
+) -> float:
+    method = method.lower()
+    if source_errors.size == 0:
+        raise ValueError("source_errors cannot be empty")
+
+    if method == "percentile":
+        return float(np.percentile(source_errors, percentile))
+
+    if target_benign_errors is None or target_benign_errors.size == 0:
+        raise ValueError(f"Threshold method '{method}' requires target benign errors.")
+
+    if method == "target_percentile":
+        return float(np.percentile(target_benign_errors, percentile))
+    if method == "target_gaussian":
+        mu = float(np.mean(target_benign_errors))
+        sigma = float(np.std(target_benign_errors))
+        return mu + (k_sigma * sigma)
+
+    raise ValueError(f"Unknown threshold method: {method}")
+
+
 def eval_shards(model, shard_files, threshold, batch_size, sample_size, label: str):
     tp = fp = tn = fn = 0
     sampler = ReservoirSampler(sample_size)
@@ -221,8 +302,17 @@ def main() -> None:
 
     model = tf.keras.models.load_model(args.model)
 
-    eval_batch = int(cfg.get("evaluation", {}).get("batch_size", 256))
-    sample_size = int(cfg.get("evaluation", {}).get("sample_size", 200000))
+    eval_cfg = cfg.get("evaluation", {})
+    eval_batch = int(eval_cfg.get("batch_size", 256))
+    sample_size = int(eval_cfg.get("sample_size", 200000))
+    eval_mode = str(eval_cfg.get("mode", "zero_shot")).lower()
+    threshold_method = str(eval_cfg.get("threshold_method", "percentile")).lower()
+    threshold_k_sigma = float(eval_cfg.get("threshold_k_sigma", 2.5))
+    few_shot_frac = float(eval_cfg.get("few_shot_benign_frac", 0.01))
+    few_shot_max_samples = int(eval_cfg.get("few_shot_max_samples", 50000))
+    few_shot_finetune_epochs = int(eval_cfg.get("few_shot_finetune_epochs", 0))
+    few_shot_finetune_lr = float(eval_cfg.get("few_shot_finetune_lr", cfg["training"]["learning_rate"]))
+    few_shot_finetune_batch = int(eval_cfg.get("few_shot_finetune_batch_size", eval_batch))
 
     val_manifest = shard_root / "cic" / "val" / "manifest.json"
     cic_manifest = shard_root / "cic" / "test" / "manifest.json"
@@ -243,8 +333,53 @@ def main() -> None:
         cic_shards = [shard_root / s["path"] for s in cic_info["shards"]]
         cse_shards = [shard_root / s["path"] for s in cse_info["shards"]]
 
-        threshold = compute_threshold_from_shards(
-            model, val_shards, cfg["threshold"]["percentile"], eval_batch, sample_size
+        source_errors = collect_error_sample_from_shards(
+            model,
+            val_shards,
+            batch_size=eval_batch,
+            sample_size=sample_size,
+            benign_only=False,
+        )
+        target_benign_errors = None
+        if eval_mode == "few_shot":
+            adapt_x = sample_target_benign_windows(
+                cse_shards,
+                frac=few_shot_frac,
+                max_samples=few_shot_max_samples,
+                seed=int(cfg["preprocess"]["random_seed"]),
+            )
+            if adapt_x.size == 0:
+                raise ValueError("few_shot mode enabled, but no benign adaptation windows were sampled.")
+            logging.info("[PROGRESS] few_shot adaptation sample windows: %d", adapt_x.shape[0])
+
+            if few_shot_finetune_epochs > 0:
+                model.compile(
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=few_shot_finetune_lr),
+                    loss="mse",
+                )
+                model.fit(
+                    adapt_x,
+                    adapt_x,
+                    epochs=few_shot_finetune_epochs,
+                    batch_size=few_shot_finetune_batch,
+                    shuffle=True,
+                    verbose=1,
+                )
+
+            target_benign_errors = reconstruction_errors(model, adapt_x, batch_size=eval_batch)
+
+        threshold = compute_threshold_value(
+            method=threshold_method,
+            source_errors=source_errors,
+            target_benign_errors=target_benign_errors,
+            percentile=float(cfg["threshold"]["percentile"]),
+            k_sigma=threshold_k_sigma,
+        )
+        logging.info(
+            "[DONE] Threshold selected | mode=%s method=%s value=%.8f",
+            eval_mode,
+            threshold_method,
+            threshold,
         )
 
         cic_metrics, cic_sampler, cic_benign, cic_attack = eval_shards(
@@ -270,6 +405,8 @@ def main() -> None:
         plot_error_dist(cse_benign.get()[0], cse_attack.get()[0], plots_dir / "err_dist_cse.png")
 
     else:
+        if eval_mode == "few_shot":
+            raise ValueError("few_shot mode currently requires shard manifests.")
         val_npz = np.load(data_dir / "cic_val.npz")
         x_val = val_npz["x"].astype(np.float32)
 
@@ -314,6 +451,9 @@ def main() -> None:
         "f1_gap": cic_metrics["f1"] - cse_metrics["f1"],
         "auc_gap": (cic_metrics.get("roc_auc") or 0) - (cse_metrics.get("roc_auc") or 0),
         "accuracy_gap": cic_metrics["accuracy"] - cse_metrics["accuracy"],
+        "mode": eval_mode,
+        "threshold_method": threshold_method,
+        "threshold": float(threshold),
     }
     save_json(metrics_dir / f"{args.tag}_generalization_gap.json", generalization_gap)
     logging.info(
