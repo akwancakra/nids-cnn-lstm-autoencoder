@@ -24,6 +24,7 @@ data/processed/
 models/
 results/
 reports/
+release_artifacts/
 
 # Optional local notes/artifacts
 *.log
