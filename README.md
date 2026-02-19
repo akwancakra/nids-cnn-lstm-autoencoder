@@ -419,6 +419,19 @@ training:
   cnn_kernel_size: 3
   lstm_units: [128, 64] # LSTM hidden units
   latent_dim: 32 # Bottleneck dimension
+
+model_variant:
+  lstm_backbone: lstm # lstm|bilstm
+  use_temporal_attention: false
+  multi_scale_kernels: [] # e.g. [3, 5, 7]
+  reconstruction_loss: mse # mse|huber
+  dropout_schedule: [] # optional schedule, e.g. [0.1, 0.3]
+
+augmentation:
+  gaussian_noise_std: 0.0
+  feature_mask_ratio: 0.0
+  temporal_jitter_prob: 0.0
+  temporal_jitter_max_shift: 0
 ```
 
 ### Threshold & Evaluation
@@ -431,7 +444,9 @@ evaluation:
   batch_size: 256
   sample_size: 200000 # Max samples for evaluation
   mode: zero_shot # zero_shot|few_shot
-  threshold_method: percentile # percentile|target_percentile|target_gaussian
+  zero_shot_strict: true
+  threshold_method: source_percentile # source_percentile|source_gaussian|source_evt|target_percentile|target_gaussian
+  threshold_selection_policy: global_source_errors # global_source_errors|worst_case_source_domain
   threshold_k_sigma: 2.5
   few_shot_benign_frac: 0.01
   few_shot_max_samples: 50000
@@ -545,7 +560,9 @@ python scripts/eval_metrics.py \
 
 - Reads evaluation strategy from `config.yaml`:
   - `evaluation.mode=zero_shot` or `few_shot`
-  - `evaluation.threshold_method=percentile|target_percentile|target_gaussian`
+  - `evaluation.zero_shot_strict=true|false`
+  - `evaluation.threshold_method=source_percentile|source_gaussian|source_evt|target_percentile|target_gaussian`
+  - `evaluation.threshold_selection_policy=global_source_errors|worst_case_source_domain`
 - Computes threshold according to selected method
 - For `few_shot`: samples benign target windows and can run lightweight unsupervised fine-tuning (optional)
 - Evaluates both CIC test and CSE test in one run
@@ -557,6 +574,7 @@ python scripts/eval_metrics.py \
 - `results/metrics/cnn_lstm_cic_metrics.json` - CIC metrics
 - `results/metrics/cnn_lstm_cse_metrics.json` - CSE metrics
 - `results/metrics/cnn_lstm_generalization_gap.json` - Gap analysis
+- `results/metrics/cnn_lstm_selection_report.json` - Threshold selection and policy metadata
 - `results/plots/cnn_lstm/roc_cic.png` - ROC curve (CIC)
 - `results/plots/cnn_lstm/roc_cse.png` - ROC curve (CSE)
 - `results/plots/cnn_lstm/cm_cic.png` - Confusion matrix (CIC)

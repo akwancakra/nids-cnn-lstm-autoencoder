@@ -512,6 +512,7 @@ class ShardWriter:
         shard_size: int,
         with_labels: bool,
         input_shape: Tuple[int, int],
+        domain_id: str,
     ) -> None:
         self.root_dir = root_dir
         self.split_dir = split_dir
@@ -519,14 +520,16 @@ class ShardWriter:
         self.shard_size = shard_size
         self.with_labels = with_labels
         self.input_shape = input_shape
+        self.domain_id = str(domain_id)
         self.shards = []
         self.total_samples = 0
         self._buf_x = []
         self._buf_y = []
+        self._buf_groups = []
         self._idx = 0
         ensure_dir(self.split_dir)
 
-    def add(self, x: np.ndarray, y: Optional[np.ndarray] = None) -> None:
+    def add(self, x: np.ndarray, y: Optional[np.ndarray] = None, source_file_group: str = "unknown") -> None:
         if x.size == 0:
             return
         self._buf_x.append(x)
@@ -534,6 +537,7 @@ class ShardWriter:
             if y is None:
                 raise ValueError("Labels required for this writer")
             self._buf_y.append(y)
+        self._buf_groups.append(np.full((x.shape[0],), str(source_file_group), dtype=object))
         self.total_samples += x.shape[0]
         if sum(arr.shape[0] for arr in self._buf_x) >= self.shard_size:
             self._flush()
@@ -543,14 +547,18 @@ class ShardWriter:
             return
         x = np.concatenate(self._buf_x, axis=0)
         y = np.concatenate(self._buf_y, axis=0) if self.with_labels else None
+        groups = np.concatenate(self._buf_groups, axis=0)
         self._buf_x = []
         self._buf_y = []
+        self._buf_groups = []
 
         for start in range(0, x.shape[0], self.shard_size):
             end = start + self.shard_size
             xb = x[start:end]
             if xb.shape[0] == 0:
                 continue
+            gb = groups[start:end]
+            unique_groups = sorted({str(v) for v in gb.tolist()})
             shard_path = self.split_dir / f"{self.prefix}_{self._idx:04d}.npz"
             if self.with_labels:
                 yb = y[start:end]
@@ -558,15 +566,32 @@ class ShardWriter:
             else:
                 save_npz(shard_path, x=xb)
             rel_path = shard_path.relative_to(self.root_dir)
-            self.shards.append({"path": str(rel_path).replace("\\", "/"), "samples": int(xb.shape[0])})
+            self.shards.append(
+                {
+                    "path": str(rel_path).replace("\\", "/"),
+                    "samples": int(xb.shape[0]),
+                    "domain_id": self.domain_id,
+                    "source_file_group": unique_groups[0] if len(unique_groups) == 1 else "mixed",
+                    "source_file_groups": unique_groups,
+                }
+            )
             self._idx += 1
 
     def finalize(self) -> dict:
         self._flush()
+        source_groups = sorted(
+            {
+                g
+                for shard in self.shards
+                for g in shard.get("source_file_groups", [shard.get("source_file_group", "unknown")])
+            }
+        )
         return {
+            "domain_id": self.domain_id,
             "total_samples": int(self.total_samples),
             "num_shards": len(self.shards),
             "input_shape": list(self.input_shape),
+            "source_file_groups": source_groups,
             "shards": self.shards,
         }
 
@@ -751,10 +776,10 @@ def main() -> None:
         cse_dir = shard_root / "cse" / "test"
 
         input_shape = (window_size, len(features))
-        train_writer = ShardWriter(shard_root, train_dir, "cic_train", shard_size, False, input_shape)
-        val_writer = ShardWriter(shard_root, val_dir, "cic_val", shard_size, False, input_shape)
-        test_writer = ShardWriter(shard_root, test_dir, "cic_test", shard_size, True, input_shape)
-        cse_writer = ShardWriter(shard_root, cse_dir, "cse_test", shard_size, True, input_shape)
+        train_writer = ShardWriter(shard_root, train_dir, "cic_train", shard_size, False, input_shape, domain_id="cic")
+        val_writer = ShardWriter(shard_root, val_dir, "cic_val", shard_size, False, input_shape, domain_id="cic")
+        test_writer = ShardWriter(shard_root, test_dir, "cic_test", shard_size, True, input_shape, domain_id="cic")
+        cse_writer = ShardWriter(shard_root, cse_dir, "cse_test", shard_size, True, input_shape, domain_id="cse")
 
         train_end, val_end = split_files_by_index(len(cic_files), test_size, val_size)
 
@@ -787,11 +812,11 @@ def main() -> None:
                 post_scale_clip_abs=post_scale_clip_abs,
             ):
                 if idx < train_end:
-                    train_writer.add(xw[yw == 0])
+                    train_writer.add(xw[yw == 0], source_file_group=csv_path.stem)
                 elif idx < val_end:
-                    val_writer.add(xw[yw == 0])
+                    val_writer.add(xw[yw == 0], source_file_group=csv_path.stem)
                 else:
-                    test_writer.add(xw, yw)
+                    test_writer.add(xw, yw, source_file_group=csv_path.stem)
             elapsed = time.time() - cic_t0
             avg = elapsed / (idx + 1)
             eta = avg * (n_cic - (idx + 1))
@@ -837,7 +862,7 @@ def main() -> None:
                 raw_clip_bounds=raw_clip_bounds,
                 post_scale_clip_abs=post_scale_clip_abs,
             ):
-                cse_writer.add(xw, yw)
+                cse_writer.add(xw, yw, source_file_group=csv_path.stem)
             elapsed = time.time() - cse_t0
             avg = elapsed / (idx + 1)
             eta = avg * (n_cse - (idx + 1))

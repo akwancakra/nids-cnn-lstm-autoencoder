@@ -206,6 +206,74 @@ def sample_target_benign_windows(
     return np.concatenate(collected, axis=0)
 
 
+SOURCE_THRESHOLD_METHODS = {"source_percentile", "source_gaussian", "source_evt", "percentile"}
+TARGET_THRESHOLD_METHODS = {"target_percentile", "target_gaussian"}
+
+
+def _compute_source_evt_threshold(source_errors: np.ndarray, percentile: float) -> float:
+    errs = np.asarray(source_errors, dtype=np.float64)
+    if errs.size == 0:
+        raise ValueError("source_errors cannot be empty for EVT thresholding.")
+
+    q = float(percentile) / 100.0
+    q = min(max(q, 0.01), 0.9999)
+
+    u = float(np.percentile(errs, 95.0))
+    tail = errs[errs > u] - u
+    if tail.size < 10:
+        # Fallback: conservative source-only percentile when tail is too small.
+        return float(np.percentile(errs, max(percentile, 99.0)))
+
+    m = float(np.mean(tail))
+    v = float(np.var(tail))
+    if not np.isfinite(m) or not np.isfinite(v) or m <= 0.0:
+        return float(np.percentile(errs, max(percentile, 99.0)))
+
+    if v <= (m * m):
+        xi = 0.0
+    else:
+        xi = 0.5 * (1.0 - ((m * m) / v))
+    xi = float(np.clip(xi, -0.2, 0.5))
+    beta = float(max(1e-8, m * (1.0 - xi)))
+
+    p_u = float(tail.size / errs.size)
+    if p_u <= 0.0:
+        return float(np.percentile(errs, max(percentile, 99.0)))
+    min_q = 1.0 - p_u + 1e-6
+    q = max(q, min_q)
+    q = min(q, 0.999999)
+    ratio = max((1.0 - q) / p_u, 1e-12)
+
+    if abs(xi) < 1e-8:
+        x_q = u - (beta * np.log(ratio))
+    else:
+        x_q = u + (beta / xi) * (np.power(ratio, -xi) - 1.0)
+
+    if not np.isfinite(x_q):
+        return float(np.percentile(errs, max(percentile, 99.0)))
+    return float(max(x_q, float(np.min(errs))))
+
+
+def validate_eval_policy(eval_mode: str, threshold_method: str, zero_shot_strict: bool) -> None:
+    mode = str(eval_mode).lower()
+    method = str(threshold_method).lower()
+
+    if method not in SOURCE_THRESHOLD_METHODS and method not in TARGET_THRESHOLD_METHODS:
+        raise ValueError(f"Unknown threshold method: {threshold_method}")
+
+    if zero_shot_strict and method in TARGET_THRESHOLD_METHODS:
+        raise ValueError(
+            "zero_shot_strict=true forbids target-domain threshold methods. "
+            "Use source_percentile/source_gaussian/source_evt."
+        )
+
+    if mode == "zero_shot" and method in TARGET_THRESHOLD_METHODS:
+        raise ValueError(
+            "zero_shot mode cannot use target-domain threshold methods. "
+            "Switch to few_shot or use source-only thresholding."
+        )
+
+
 def compute_threshold_value(
     method: str,
     source_errors: np.ndarray,
@@ -217,8 +285,14 @@ def compute_threshold_value(
     if source_errors.size == 0:
         raise ValueError("source_errors cannot be empty")
 
-    if method == "percentile":
+    if method in {"percentile", "source_percentile"}:
         return float(np.percentile(source_errors, percentile))
+    if method == "source_gaussian":
+        mu = float(np.mean(source_errors))
+        sigma = float(np.std(source_errors))
+        return mu + (k_sigma * sigma)
+    if method == "source_evt":
+        return _compute_source_evt_threshold(source_errors, percentile)
 
     if target_benign_errors is None or target_benign_errors.size == 0:
         raise ValueError(f"Threshold method '{method}' requires target benign errors.")
@@ -306,13 +380,23 @@ def main() -> None:
     eval_batch = int(eval_cfg.get("batch_size", 256))
     sample_size = int(eval_cfg.get("sample_size", 200000))
     eval_mode = str(eval_cfg.get("mode", "zero_shot")).lower()
-    threshold_method = str(eval_cfg.get("threshold_method", "percentile")).lower()
+    threshold_method = str(eval_cfg.get("threshold_method", "source_percentile")).lower()
     threshold_k_sigma = float(eval_cfg.get("threshold_k_sigma", 2.5))
+    threshold_selection_policy = str(eval_cfg.get("threshold_selection_policy", "global_source_errors")).lower()
+    zero_shot_strict = bool(eval_cfg.get("zero_shot_strict", False))
     few_shot_frac = float(eval_cfg.get("few_shot_benign_frac", 0.01))
     few_shot_max_samples = int(eval_cfg.get("few_shot_max_samples", 50000))
     few_shot_finetune_epochs = int(eval_cfg.get("few_shot_finetune_epochs", 0))
     few_shot_finetune_lr = float(eval_cfg.get("few_shot_finetune_lr", cfg["training"]["learning_rate"]))
     few_shot_finetune_batch = int(eval_cfg.get("few_shot_finetune_batch_size", eval_batch))
+
+    validate_eval_policy(eval_mode, threshold_method, zero_shot_strict)
+    selection_report = {
+        "eval_mode": eval_mode,
+        "threshold_method": threshold_method,
+        "threshold_selection_policy": threshold_selection_policy,
+        "zero_shot_strict": zero_shot_strict,
+    }
 
     val_manifest = shard_root / "cic" / "val" / "manifest.json"
     cic_manifest = shard_root / "cic" / "test" / "manifest.json"
@@ -340,6 +424,7 @@ def main() -> None:
             sample_size=sample_size,
             benign_only=False,
         )
+        group_thresholds: dict[str, float] = {}
         target_benign_errors = None
         if eval_mode == "few_shot":
             adapt_x = sample_target_benign_windows(
@@ -367,19 +452,62 @@ def main() -> None:
                 )
 
             target_benign_errors = reconstruction_errors(model, adapt_x, batch_size=eval_batch)
+        threshold_percentile = float(cfg["threshold"]["percentile"])
+        if threshold_selection_policy == "worst_case_source_domain" and threshold_method in SOURCE_THRESHOLD_METHODS:
+            by_group: dict[str, list[Path]] = {}
+            for shard in val_info["shards"]:
+                group = str(shard.get("source_file_group", "unknown"))
+                by_group.setdefault(group, []).append(shard_root / shard["path"])
 
-        threshold = compute_threshold_value(
-            method=threshold_method,
-            source_errors=source_errors,
-            target_benign_errors=target_benign_errors,
-            percentile=float(cfg["threshold"]["percentile"]),
-            k_sigma=threshold_k_sigma,
-        )
+            for group, group_shards in by_group.items():
+                errs_group = collect_error_sample_from_shards(
+                    model,
+                    group_shards,
+                    batch_size=eval_batch,
+                    sample_size=max(10000, int(sample_size / max(1, len(by_group)))),
+                    benign_only=False,
+                )
+                if errs_group.size == 0:
+                    continue
+                group_thresholds[group] = compute_threshold_value(
+                    method=threshold_method,
+                    source_errors=errs_group,
+                    target_benign_errors=None,
+                    percentile=threshold_percentile,
+                    k_sigma=threshold_k_sigma,
+                )
+            if group_thresholds:
+                threshold = float(max(group_thresholds.values()))
+            else:
+                threshold = compute_threshold_value(
+                    method=threshold_method,
+                    source_errors=source_errors,
+                    target_benign_errors=target_benign_errors,
+                    percentile=threshold_percentile,
+                    k_sigma=threshold_k_sigma,
+                )
+        else:
+            threshold = compute_threshold_value(
+                method=threshold_method,
+                source_errors=source_errors,
+                target_benign_errors=target_benign_errors,
+                percentile=threshold_percentile,
+                k_sigma=threshold_k_sigma,
+            )
         logging.info(
-            "[DONE] Threshold selected | mode=%s method=%s value=%.8f",
+            "[DONE] Threshold selected | mode=%s method=%s policy=%s value=%.8f",
             eval_mode,
             threshold_method,
+            threshold_selection_policy,
             threshold,
+        )
+        selection_report.update(
+            {
+                "selected_threshold": float(threshold),
+                "source_error_count": int(source_errors.size),
+                "target_benign_error_count": int(0 if target_benign_errors is None else target_benign_errors.size),
+                "group_thresholds": {k: float(v) for k, v in group_thresholds.items()},
+            }
         )
 
         cic_metrics, cic_sampler, cic_benign, cic_attack = eval_shards(
@@ -418,7 +546,22 @@ def main() -> None:
         x_cse = cse_test["x"].astype(np.float32)
         y_cse = cse_test["y"].astype(np.int32)
 
-        threshold = np.percentile(reconstruction_errors(model, x_val), cfg["threshold"]["percentile"])
+        source_errors = reconstruction_errors(model, x_val, batch_size=eval_batch)
+        threshold = compute_threshold_value(
+            method=threshold_method,
+            source_errors=source_errors,
+            target_benign_errors=None,
+            percentile=float(cfg["threshold"]["percentile"]),
+            k_sigma=threshold_k_sigma,
+        )
+        selection_report.update(
+            {
+                "selected_threshold": float(threshold),
+                "source_error_count": int(source_errors.size),
+                "target_benign_error_count": 0,
+                "group_thresholds": {},
+            }
+        )
 
         cic_scores = reconstruction_errors(model, x_cic)
         cse_scores = reconstruction_errors(model, x_cse)
@@ -456,6 +599,7 @@ def main() -> None:
         "threshold": float(threshold),
     }
     save_json(metrics_dir / f"{args.tag}_generalization_gap.json", generalization_gap)
+    save_json(metrics_dir / f"{args.tag}_selection_report.json", selection_report)
     logging.info(
         "[DONE] Evaluation finished | f1_gap=%.4f auc_gap=%.4f acc_gap=%.4f duration=%s",
         generalization_gap["f1_gap"],

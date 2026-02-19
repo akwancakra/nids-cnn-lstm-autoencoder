@@ -25,36 +25,155 @@ if str(ROOT) not in sys.path:
 from scripts.utils import ensure_dir, iter_npz_batches, load_json, load_yaml, save_json, setup_logging
 
 
-def build_model(input_shape, cfg):
-    cnn_filters = cfg["training"]["cnn_filters"]
-    cnn_kernel = cfg["training"]["cnn_kernel_size"]
-    lstm_units = cfg["training"]["lstm_units"]
-    dropout = cfg["training"]["dropout"]
-    latent_dim = cfg["training"]["latent_dim"]
+def _resolve_model_variant(cfg: dict) -> dict:
+    variant = cfg.get("model_variant", {})
+    lstm_backbone = str(variant.get("lstm_backbone", "lstm")).lower()
+    if lstm_backbone not in {"lstm", "bilstm"}:
+        raise ValueError("model_variant.lstm_backbone must be one of: lstm, bilstm")
 
-    inputs = keras.Input(shape=input_shape)
-    x = inputs
+    reconstruction_loss = str(variant.get("reconstruction_loss", "mse")).lower()
+    if reconstruction_loss not in {"mse", "huber"}:
+        raise ValueError("model_variant.reconstruction_loss must be one of: mse, huber")
+
+    kernels = variant.get("multi_scale_kernels", [])
+    if kernels is None:
+        kernels = []
+    if not isinstance(kernels, list):
+        raise ValueError("model_variant.multi_scale_kernels must be a list of ints")
+    kernels = [int(k) for k in kernels if int(k) > 0]
+
+    dropout_schedule = variant.get("dropout_schedule", [])
+    if dropout_schedule is None:
+        dropout_schedule = []
+    if not isinstance(dropout_schedule, list):
+        raise ValueError("model_variant.dropout_schedule must be a list of floats")
+    dropout_schedule = [float(v) for v in dropout_schedule]
+
+    return {
+        "lstm_backbone": lstm_backbone,
+        "use_temporal_attention": bool(variant.get("use_temporal_attention", False)),
+        "multi_scale_kernels": kernels,
+        "reconstruction_loss": reconstruction_loss,
+        "dropout_schedule": dropout_schedule,
+    }
+
+
+def _dropout_for_layer(base_dropout: float, schedule: list[float], idx: int, total: int) -> float:
+    if total <= 0:
+        return float(base_dropout)
+    if not schedule:
+        return float(base_dropout)
+    if len(schedule) == 1:
+        return float(schedule[0])
+    start = float(schedule[0])
+    end = float(schedule[-1])
+    if total == 1:
+        return end
+    ratio = idx / max(1, total - 1)
+    return float(start + ((end - start) * ratio))
+
+
+def _build_conv_stack(x, cnn_filters: list[int], kernel_size: int):
     for f in cnn_filters:
-        x = layers.Conv1D(filters=f, kernel_size=cnn_kernel, padding="same")(x)
+        x = layers.Conv1D(filters=f, kernel_size=kernel_size, padding="same")(x)
         x = layers.BatchNormalization()(x)
         x = layers.Activation("relu")(x)
         x = layers.MaxPooling1D(pool_size=2, padding="same")(x)
+    return x
 
+
+def _rnn_layer(units: int, return_sequences: bool, backbone: str):
+    if backbone == "bilstm":
+        return layers.Bidirectional(layers.LSTM(units, return_sequences=return_sequences))
+    return layers.LSTM(units, return_sequences=return_sequences)
+
+
+def build_model(input_shape, cfg):
+    cnn_filters = [int(v) for v in cfg["training"]["cnn_filters"]]
+    cnn_kernel = int(cfg["training"]["cnn_kernel_size"])
+    lstm_units = [int(v) for v in cfg["training"]["lstm_units"]]
+    if not lstm_units:
+        raise ValueError("training.lstm_units must contain at least one layer size")
+    dropout = float(cfg["training"]["dropout"])
+    latent_dim = int(cfg["training"]["latent_dim"])
+    variant = _resolve_model_variant(cfg)
+
+    inputs = keras.Input(shape=input_shape)
+    multi_scale_kernels = variant["multi_scale_kernels"]
+    if multi_scale_kernels:
+        conv_branches = [_build_conv_stack(inputs, cnn_filters, int(k)) for k in multi_scale_kernels]
+        x = layers.Concatenate(name="multi_scale_concat")(conv_branches) if len(conv_branches) > 1 else conv_branches[0]
+    else:
+        x = _build_conv_stack(inputs, cnn_filters, cnn_kernel)
+
+    total_recurrent_layers = max(1, len(lstm_units) * 2)
+    rec_idx = 0
     for i, units in enumerate(lstm_units):
-        x = layers.LSTM(units, return_sequences=(i < len(lstm_units) - 1))(x)
-        x = layers.Dropout(dropout)(x)
+        is_last = i == (len(lstm_units) - 1)
+        return_seq = (not is_last) or variant["use_temporal_attention"]
+        x = _rnn_layer(units, return_sequences=return_seq, backbone=variant["lstm_backbone"])(x)
+        layer_dropout = _dropout_for_layer(dropout, variant["dropout_schedule"], rec_idx, total_recurrent_layers)
+        rec_idx += 1
+        x = layers.Dropout(layer_dropout)(x)
 
-    x = layers.Dense(latent_dim, activation="relu")(x)
+    if variant["use_temporal_attention"]:
+        attn_score = layers.Dense(1, activation="tanh", name="temporal_attention_score")(x)
+        attn_weights = layers.Softmax(axis=1, name="temporal_attention_weights")(attn_score)
+        weighted = layers.Multiply(name="temporal_attention_apply")([x, attn_weights])
+        x = layers.Lambda(lambda t: tf.reduce_sum(t, axis=1), name="temporal_attention_context")(weighted)
+
+    x = layers.Dense(latent_dim, activation="relu", name="latent_dense")(x)
 
     x = layers.RepeatVector(input_shape[0])(x)
     for units in reversed(lstm_units):
-        x = layers.LSTM(units, return_sequences=True)(x)
-        x = layers.Dropout(dropout)(x)
+        x = _rnn_layer(units, return_sequences=True, backbone=variant["lstm_backbone"])(x)
+        layer_dropout = _dropout_for_layer(dropout, variant["dropout_schedule"], rec_idx, total_recurrent_layers)
+        rec_idx += 1
+        x = layers.Dropout(layer_dropout)(x)
 
     outputs = layers.TimeDistributed(layers.Dense(input_shape[1]))(x)
 
     model = keras.Model(inputs, outputs, name="cnn_lstm_autoencoder")
     return model
+
+
+def _resolve_augmentation_cfg(cfg: dict) -> dict:
+    aug = cfg.get("augmentation", {})
+    noise_std = float(aug.get("gaussian_noise_std", 0.0))
+    mask_ratio = float(aug.get("feature_mask_ratio", 0.0))
+    jitter_prob = float(aug.get("temporal_jitter_prob", 0.0))
+    jitter_max_shift = int(aug.get("temporal_jitter_max_shift", 0))
+    return {
+        "gaussian_noise_std": max(0.0, noise_std),
+        "feature_mask_ratio": min(max(mask_ratio, 0.0), 1.0),
+        "temporal_jitter_prob": min(max(jitter_prob, 0.0), 1.0),
+        "temporal_jitter_max_shift": max(0, jitter_max_shift),
+    }
+
+
+def _augment_batch_numpy(x_batch: np.ndarray, aug_cfg: dict, rng: np.random.Generator) -> np.ndarray:
+    x_aug = np.array(x_batch, copy=True)
+    noise_std = float(aug_cfg["gaussian_noise_std"])
+    mask_ratio = float(aug_cfg["feature_mask_ratio"])
+    jitter_prob = float(aug_cfg["temporal_jitter_prob"])
+    jitter_max_shift = int(aug_cfg["temporal_jitter_max_shift"])
+
+    if noise_std > 0.0:
+        x_aug += rng.normal(0.0, noise_std, size=x_aug.shape).astype(np.float32)
+
+    if mask_ratio > 0.0:
+        mask = rng.random(size=x_aug.shape) < mask_ratio
+        x_aug[mask] = 0.0
+
+    if jitter_prob > 0.0 and jitter_max_shift > 0:
+        apply = rng.random(size=(x_aug.shape[0],)) < jitter_prob
+        shifts = rng.integers(-jitter_max_shift, jitter_max_shift + 1, size=(x_aug.shape[0],))
+        for idx in np.where(apply)[0]:
+            shift = int(shifts[idx])
+            if shift != 0:
+                x_aug[idx] = np.roll(x_aug[idx], shift=shift, axis=0)
+
+    return x_aug.astype(np.float32)
 
 
 def format_duration(seconds: float) -> str:
@@ -132,6 +251,15 @@ def main() -> None:
             "Skipping tf.random.set_seed because tensorflow_directml_plugin is active "
             "(avoids DirectML stateless random kernel conflict)."
         )
+    aug_cfg = _resolve_augmentation_cfg(cfg)
+    augmentation_enabled = any(
+        [
+            aug_cfg["gaussian_noise_std"] > 0.0,
+            aug_cfg["feature_mask_ratio"] > 0.0,
+            aug_cfg["temporal_jitter_prob"] > 0.0 and aug_cfg["temporal_jitter_max_shift"] > 0,
+        ]
+    )
+    logging.info("[STAGE] Augmentation enabled: %s | cfg=%s", augmentation_enabled, aug_cfg)
 
     data_dir = Path(cfg["paths"]["data_processed"])
     models_dir = Path(cfg["paths"]["models_dir"]) / "cnn_lstm_ae"
@@ -160,10 +288,25 @@ def main() -> None:
         val_shards = [shard_root / s["path"] for s in val_manifest["shards"]]
 
         output_signature = tf.TensorSpec(shape=(None, *input_shape), dtype=tf.float32)
-        train_ds = tf.data.Dataset.from_generator(
-            lambda: iter_npz_batches(train_shards, batch_size, True, False),
-            output_signature=output_signature,
-        ).map(lambda x: (x, x)).repeat().prefetch(tf.data.AUTOTUNE)
+        if augmentation_enabled:
+            def train_batch_generator():
+                rng = np.random.default_rng(seed)
+                for xb in iter_npz_batches(train_shards, batch_size, True, False):
+                    yield _augment_batch_numpy(xb, aug_cfg, rng)
+        else:
+            def train_batch_generator():
+                for xb in iter_npz_batches(train_shards, batch_size, True, False):
+                    yield xb
+
+        train_ds = (
+            tf.data.Dataset.from_generator(
+                train_batch_generator,
+                output_signature=output_signature,
+            )
+            .map(lambda x: (x, x))
+            .repeat()
+            .prefetch(tf.data.AUTOTUNE)
+        )
 
         val_ds = tf.data.Dataset.from_generator(
             lambda: iter_npz_batches(val_shards, batch_size, False, False),
@@ -183,6 +326,9 @@ def main() -> None:
 
         x_train = train_npz["x"].astype(np.float32)
         x_val = val_npz["x"].astype(np.float32)
+        if augmentation_enabled:
+            rng = np.random.default_rng(seed)
+            x_train = _augment_batch_numpy(x_train, aug_cfg, rng)
 
         input_shape = x_train.shape[1:]
         logging.info(
@@ -240,7 +386,12 @@ def main() -> None:
     optimizer_kwargs = {"learning_rate": lr}
     if clipnorm is not None:
         optimizer_kwargs["clipnorm"] = float(clipnorm)
-    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss="mse")
+    variant = _resolve_model_variant(cfg)
+    if variant["reconstruction_loss"] == "huber":
+        reconstruction_loss = keras.losses.Huber()
+    else:
+        reconstruction_loss = "mse"
+    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss=reconstruction_loss)
 
     # Custom callback for periodic checkpoint (every N epochs)
     class PeriodicCheckpoint(keras.callbacks.Callback):

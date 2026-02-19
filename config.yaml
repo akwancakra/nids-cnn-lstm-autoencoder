@@ -72,13 +72,26 @@ training:
   - 128
   - 64
   latent_dim: 32
+model_variant:
+  lstm_backbone: lstm
+  use_temporal_attention: false
+  multi_scale_kernels: []
+  reconstruction_loss: mse
+  dropout_schedule: []
+augmentation:
+  gaussian_noise_std: 0.0
+  feature_mask_ratio: 0.0
+  temporal_jitter_prob: 0.0
+  temporal_jitter_max_shift: 0
 threshold:
   percentile: 99
 evaluation:
   batch_size: 256
   sample_size: 200000
   mode: zero_shot
-  threshold_method: percentile
+  zero_shot_strict: true
+  threshold_method: source_percentile
+  threshold_selection_policy: global_source_errors
   threshold_k_sigma: 2.5
   few_shot_benign_frac: 0.01
   few_shot_max_samples: 50000
