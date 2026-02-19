@@ -27,6 +27,7 @@ preprocess:
     - class
   benign_label: BENIGN
   scaler: standard
+  scaler_fit_mode: auto # auto|stream_partial|full_benign
   feature_filter:
     enable_nzv: false
     nzv_threshold: 1.0e-6

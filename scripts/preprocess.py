@@ -279,22 +279,66 @@ def fit_scaler_on_cic(
     max_rows_per_file: int | None,
     chunksize: int | None,
     scaler,
+    scaler_fit_mode: str = "auto",
     column_mapper: Optional[dict[str, str]] = None,
 ) -> None:
-    for csv_path in csv_files:
-        for chunk in iter_chunks(
-            csv_path,
-            features + [label_col],
-            chunksize,
-            sample_frac,
-            max_rows_per_file,
+    mode = str(scaler_fit_mode).lower()
+    supports_partial_fit = hasattr(scaler, "partial_fit")
+
+    if mode == "auto":
+        mode = "stream_partial" if supports_partial_fit else "full_benign"
+
+    if mode == "stream_partial":
+        if not supports_partial_fit:
+            raise ValueError(
+                f"Scaler {scaler.__class__.__name__} does not support partial_fit. "
+                "Use preprocess.scaler_fit_mode=full_benign or auto."
+            )
+        total_benign = 0
+        for csv_path in csv_files:
+            for chunk in iter_chunks(
+                csv_path,
+                features + [label_col],
+                chunksize,
+                sample_frac,
+                max_rows_per_file,
+                column_mapper=column_mapper,
+            ):
+                x, y = prepare_chunk(chunk, features, label_col, fillna_value)
+                y = pd.Series(y).astype(str).str.upper().to_numpy()
+                benign_mask = y == benign_label.upper()
+                if np.any(benign_mask):
+                    benign_x = x[benign_mask]
+                    scaler.partial_fit(benign_x)
+                    total_benign += benign_x.shape[0]
+        if total_benign == 0:
+            raise ValueError("No BENIGN rows found in CIC source data for scaler fitting.")
+        logging.info("[PROGRESS] scaler fit mode=stream_partial | benign_rows=%d", total_benign)
+        return
+
+    if mode == "full_benign":
+        benign_x = collect_benign_sample_from_cic(
+            csv_files=csv_files,
+            features=features,
+            label_col=label_col,
+            benign_label=benign_label,
+            fillna_value=fillna_value,
+            sample_frac=sample_frac,
+            max_rows_per_file=max_rows_per_file,
+            chunksize=chunksize,
+            sample_rows_limit=None,
             column_mapper=column_mapper,
-        ):
-            x, y = prepare_chunk(chunk, features, label_col, fillna_value)
-            y = pd.Series(y).astype(str).str.upper().to_numpy()
-            benign_mask = y == benign_label.upper()
-            if np.any(benign_mask):
-                scaler.partial_fit(x[benign_mask])
+        )
+        if benign_x.shape[0] == 0:
+            raise ValueError("No BENIGN rows found in CIC source data for scaler fitting.")
+        scaler.fit(benign_x)
+        logging.info("[PROGRESS] scaler fit mode=full_benign | benign_rows=%d", benign_x.shape[0])
+        return
+
+    raise ValueError(
+        f"Unknown preprocess.scaler_fit_mode={scaler_fit_mode}. "
+        "Allowed: auto, stream_partial, full_benign."
+    )
 
 
 def collect_benign_sample_from_cic(
@@ -306,10 +350,10 @@ def collect_benign_sample_from_cic(
     sample_frac: float | None,
     max_rows_per_file: int | None,
     chunksize: int | None,
-    sample_rows_limit: int,
+    sample_rows_limit: int | None,
     column_mapper: Optional[dict[str, str]] = None,
 ) -> np.ndarray:
-    if sample_rows_limit <= 0:
+    if sample_rows_limit is not None and sample_rows_limit <= 0:
         return np.empty((0, len(features)), dtype=np.float32)
 
     collected: List[np.ndarray] = []
@@ -329,14 +373,15 @@ def collect_benign_sample_from_cic(
             if benign_x.shape[0] == 0:
                 continue
 
-            remaining = sample_rows_limit - total
-            if remaining <= 0:
-                break
-            if benign_x.shape[0] > remaining:
-                benign_x = benign_x[:remaining]
+            if sample_rows_limit is not None:
+                remaining = sample_rows_limit - total
+                if remaining <= 0:
+                    break
+                if benign_x.shape[0] > remaining:
+                    benign_x = benign_x[:remaining]
             collected.append(benign_x)
             total += benign_x.shape[0]
-        if total >= sample_rows_limit:
+        if sample_rows_limit is not None and total >= sample_rows_limit:
             break
 
     if not collected:
@@ -503,6 +548,7 @@ def main() -> None:
     shard_size = int(cfg["preprocess"].get("shard_size", 50000))
     write_combined = bool(cfg["preprocess"].get("write_combined", False))
     scaler_name = cfg["preprocess"]["scaler"]
+    scaler_fit_mode = str(cfg["preprocess"].get("scaler_fit_mode", "auto"))
     feature_filter_cfg = cfg["preprocess"].get("feature_filter", {})
     filter_enable_nzv = bool(feature_filter_cfg.get("enable_nzv", False))
     filter_nzv_threshold = float(feature_filter_cfg.get("nzv_threshold", 1e-6))
@@ -587,6 +633,7 @@ def main() -> None:
         max_rows_per_file,
         chunksize,
         scaler,
+        scaler_fit_mode=scaler_fit_mode,
     )
     logging.info("[DONE] Scaler fit in %s", format_duration(time.time() - scaler_t0))
 

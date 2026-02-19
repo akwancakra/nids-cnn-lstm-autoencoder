@@ -388,6 +388,7 @@ preprocess:
   window_size: 10 # Time window length
   stride: 1 # Window stride
   scaler: standard # standard|minmax|robust
+  scaler_fit_mode: auto # auto|stream_partial|full_benign
   benign_label: BENIGN # Normal traffic label
   test_size: 0.15 # Test split ratio
   val_size: 0.15 # Validation split ratio
@@ -465,6 +466,10 @@ python scripts/preprocess.py --config config.yaml
 - (Optional) Applies statistical feature filtering (near-zero variance + high correlation)
 - Splits into train/val/test (only BENIGN for train/val)
 - Applies configured scaler (`standard|minmax|robust`) fit on source benign train only
+- Scaler fit mode:
+  - `auto`: use `partial_fit` when available, otherwise fallback to full BENIGN fit
+  - `stream_partial`: force streaming partial fit (scalers that support it)
+  - `full_benign`: fit once on all BENIGN rows from CIC-IDS2017 source data
 - Creates windowed sequences (default: 10 timesteps)
 - Saves sharded NPZ files for memory-efficient loading
 
