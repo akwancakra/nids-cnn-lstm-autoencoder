@@ -104,6 +104,47 @@ def select_features_by_statistics(
     return selected, report
 
 
+def compute_feature_clip_bounds(
+    sample_array: np.ndarray | list[list[float]],
+    quantile: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    x = np.asarray(sample_array, dtype=np.float32)
+    if x.ndim != 2:
+        raise ValueError("sample_array must be 2D")
+    if not (0.5 < quantile < 1.0):
+        raise ValueError("quantile must be in range (0.5, 1.0)")
+
+    lower_q = (1.0 - quantile) * 100.0
+    upper_q = quantile * 100.0
+    lower = np.percentile(x, lower_q, axis=0).astype(np.float32)
+    upper = np.percentile(x, upper_q, axis=0).astype(np.float32)
+    swapped = lower > upper
+    if np.any(swapped):
+        tmp = lower.copy()
+        lower[swapped] = upper[swapped]
+        upper[swapped] = tmp[swapped]
+    return lower, upper
+
+
+def clip_features_per_column(
+    x: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> np.ndarray:
+    arr = np.asarray(x, dtype=np.float32)
+    low = np.asarray(lower, dtype=np.float32)
+    high = np.asarray(upper, dtype=np.float32)
+
+    if arr.ndim != 2:
+        raise ValueError("x must be 2D")
+    if low.ndim != 1 or high.ndim != 1:
+        raise ValueError("lower/upper must be 1D")
+    if arr.shape[1] != low.shape[0] or arr.shape[1] != high.shape[0]:
+        raise ValueError("x columns must match lower/upper length")
+
+    return np.clip(arr, low[None, :], high[None, :]).astype(np.float32)
+
+
 def load_header_columns(csv_path: Path) -> List[str]:
     cols = list(pd.read_csv(csv_path, nrows=0, skipinitialspace=True).columns)
     return [str(c).strip() for c in cols]
@@ -281,6 +322,7 @@ def fit_scaler_on_cic(
     scaler,
     scaler_fit_mode: str = "auto",
     column_mapper: Optional[dict[str, str]] = None,
+    raw_clip_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> None:
     mode = str(scaler_fit_mode).lower()
     supports_partial_fit = hasattr(scaler, "partial_fit")
@@ -309,6 +351,8 @@ def fit_scaler_on_cic(
                 benign_mask = y == benign_label.upper()
                 if np.any(benign_mask):
                     benign_x = x[benign_mask]
+                    if raw_clip_bounds is not None:
+                        benign_x = clip_features_per_column(benign_x, raw_clip_bounds[0], raw_clip_bounds[1])
                     scaler.partial_fit(benign_x)
                     total_benign += benign_x.shape[0]
         if total_benign == 0:
@@ -331,6 +375,8 @@ def fit_scaler_on_cic(
         )
         if benign_x.shape[0] == 0:
             raise ValueError("No BENIGN rows found in CIC source data for scaler fitting.")
+        if raw_clip_bounds is not None:
+            benign_x = clip_features_per_column(benign_x, raw_clip_bounds[0], raw_clip_bounds[1])
         scaler.fit(benign_x)
         logging.info("[PROGRESS] scaler fit mode=full_benign | benign_rows=%d", benign_x.shape[0])
         return
@@ -402,6 +448,8 @@ def iter_windows_from_file(
     window_size: int,
     stride: int,
     column_mapper: Optional[dict[str, str]] = None,
+    raw_clip_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    post_scale_clip_abs: float | None = None,
 ) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
     buffer_x = np.empty((0, len(features)), dtype=np.float32)
     buffer_y = np.empty((0,), dtype=np.int32)
@@ -416,7 +464,11 @@ def iter_windows_from_file(
     ):
         x, y_raw = prepare_chunk(chunk, features, label_col, fillna_value)
         y = (pd.Series(y_raw).astype(str).str.upper() != benign_label.upper()).astype(np.int32).to_numpy()
-        x = scaler.transform(x)
+        if raw_clip_bounds is not None:
+            x = clip_features_per_column(x, raw_clip_bounds[0], raw_clip_bounds[1])
+        x = scaler.transform(x).astype(np.float32)
+        if post_scale_clip_abs is not None:
+            x = np.clip(x, -post_scale_clip_abs, post_scale_clip_abs).astype(np.float32)
 
         if buffer_x.shape[0] > 0:
             x = np.vstack([buffer_x, x])
@@ -555,6 +607,14 @@ def main() -> None:
     filter_enable_corr = bool(feature_filter_cfg.get("enable_corr", False))
     filter_corr_threshold = float(feature_filter_cfg.get("corr_threshold", 0.95))
     filter_sample_rows = int(feature_filter_cfg.get("sample_rows_limit", 100000))
+    scale_guard_cfg = cfg["preprocess"].get("scale_guard", {})
+    scale_guard_enable = bool(scale_guard_cfg.get("enable", True))
+    raw_clip_quantile = float(scale_guard_cfg.get("raw_clip_quantile", 0.999))
+    raw_clip_sample_rows = int(scale_guard_cfg.get("raw_clip_sample_rows", 200000))
+    post_scale_clip_abs_raw = scale_guard_cfg.get("post_scale_clip_abs", 20.0)
+    post_scale_clip_abs = None if post_scale_clip_abs_raw is None else float(post_scale_clip_abs_raw)
+    if post_scale_clip_abs is not None and post_scale_clip_abs <= 0:
+        raise ValueError("preprocess.scale_guard.post_scale_clip_abs must be positive or null")
 
     if not split_by_file:
         logging.warning("split_by_file is disabled, but streaming mode requires file split. Using file split.")
@@ -620,6 +680,43 @@ def main() -> None:
     logging.info("[PROGRESS] CIC files: %d | CSE files: %d", len(cic_files), len(cse_files))
 
     scaler = get_scaler(scaler_name)
+    raw_clip_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None
+    scale_guard_report: Optional[dict] = None
+    if scale_guard_enable:
+        logging.info("[STAGE] Fitting scale guard bounds on CIC benign sample...")
+        guard_sample = collect_benign_sample_from_cic(
+            csv_files=cic_files,
+            features=features,
+            label_col=cic_label_col,
+            benign_label=benign_label,
+            fillna_value=fillna_value,
+            sample_frac=sample_frac,
+            max_rows_per_file=max_rows_per_file,
+            chunksize=chunksize,
+            sample_rows_limit=raw_clip_sample_rows,
+            column_mapper=None,
+        )
+        if guard_sample.shape[0] == 0:
+            raise ValueError("Scale guard enabled, but no benign sample rows were collected.")
+        raw_lower, raw_upper = compute_feature_clip_bounds(guard_sample, raw_clip_quantile)
+        raw_clip_bounds = (raw_lower, raw_upper)
+        scale_guard_report = {
+            "enabled": True,
+            "raw_clip_quantile": raw_clip_quantile,
+            "raw_clip_sample_rows": int(guard_sample.shape[0]),
+            "post_scale_clip_abs": post_scale_clip_abs,
+            "raw_lower": raw_lower.tolist(),
+            "raw_upper": raw_upper.tolist(),
+        }
+        logging.info(
+            "[PROGRESS] Scale guard fitted | quantile=%.4f sample_rows=%d post_scale_clip_abs=%s",
+            raw_clip_quantile,
+            guard_sample.shape[0],
+            "None" if post_scale_clip_abs is None else f"{post_scale_clip_abs:.2f}",
+        )
+    else:
+        post_scale_clip_abs = None
+        logging.info("[STAGE] Scale guard disabled.")
 
     scaler_t0 = time.time()
     logging.info("[STAGE] %s", "Fitting scaler on CIC benign data")
@@ -634,12 +731,15 @@ def main() -> None:
         chunksize,
         scaler,
         scaler_fit_mode=scaler_fit_mode,
+        raw_clip_bounds=raw_clip_bounds,
     )
     logging.info("[DONE] Scaler fit in %s", format_duration(time.time() - scaler_t0))
 
     data_processed.mkdir(parents=True, exist_ok=True)
     joblib.dump(scaler, data_processed / "scaler.pkl")
     save_json(data_processed / "feature_columns.json", {"features": features, "label_col": cic_label_col})
+    if scale_guard_report is not None:
+        save_json(data_processed / "scale_guard_report.json", scale_guard_report)
 
     if shard_enable:
         shard_root = shard_dir
@@ -683,6 +783,8 @@ def main() -> None:
                 scaler,
                 window_size,
                 stride,
+                raw_clip_bounds=raw_clip_bounds,
+                post_scale_clip_abs=post_scale_clip_abs,
             ):
                 if idx < train_end:
                     train_writer.add(xw[yw == 0])
@@ -732,6 +834,8 @@ def main() -> None:
                 window_size,
                 stride,
                 column_mapper=cse_mapper,
+                raw_clip_bounds=raw_clip_bounds,
+                post_scale_clip_abs=post_scale_clip_abs,
             ):
                 cse_writer.add(xw, yw)
             elapsed = time.time() - cse_t0

@@ -31,6 +31,11 @@ preprocess:
     enable_corr: true
     corr_threshold: 0.95
     sample_rows_limit: 100000
+  scale_guard:
+    enable: true
+    raw_clip_quantile: 0.999
+    raw_clip_sample_rows: 200000
+    post_scale_clip_abs: 20.0
   fillna_value: 0.0
   window_size: 10
   stride: 1
