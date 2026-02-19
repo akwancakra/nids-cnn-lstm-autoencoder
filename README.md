@@ -35,8 +35,11 @@ This project implements a **Hybrid CNN-LSTM Autoencoder** for network intrusion 
 - ✅ **Unsupervised Anomaly Detection**: Trained only on benign traffic
 - ✅ **Hybrid Architecture**: Combines CNN (spatial patterns) + LSTM (temporal dependencies)
 - ✅ **Cross-Dataset Validation**: Trained on CIC-IDS2017, validated on CSE-CIC-IDS2018
+- ✅ **Zero-Shot & Few-Shot Evaluation**: Configurable cross-dataset modes in one pipeline
+- ✅ **Adaptive Thresholding**: Percentile/source-target recalibration/gaussian modes
 - ✅ **Zero-Day Capability**: Detects previously unseen attack patterns
 - ✅ **Scalable Processing**: Sharded preprocessing for large datasets (>10M rows)
+- ✅ **Configurable Robust Preprocessing**: RobustScaler + optional statistical feature filtering
 - ✅ **Baseline Comparison**: LSTM Autoencoder + Traditional ML methods
 - ✅ **Reproducible Research**: Fixed seeds, versioned dependencies, documented pipeline
 
@@ -310,8 +313,9 @@ nids-cnn-lstm-autoencoder/
 │       │   ├── cic/val/*.npz + manifest.json
 │       │   ├── cic/test/*.npz + manifest.json
 │       │   └── cse/test/*.npz + manifest.json
-│       ├── scaler.pkl            # Fitted StandardScaler
+│       ├── scaler.pkl            # Fitted scaler (standard/minmax/robust)
 │       └── feature_columns.json  # Final aligned feature list
+│       └── feature_filter_report.json  # Optional feature filtering report
 │
 ├── scripts/                       # Python scripts
 │   ├── preprocess.py             # Data preprocessing pipeline
@@ -331,7 +335,16 @@ nids-cnn-lstm-autoencoder/
 │       └── final_model.keras
 │
 ├── notebooks/                     # Jupyter notebooks
-│   └── colab_ready.ipynb         # Colab-ready experiment notebook
+│   ├── colab_ready.ipynb         # Colab/local-ready experiment notebook
+│   └── colab_ready_online.ipynb  # Colab online-focused notebook variant
+│
+├── tests/                         # Unit tests
+│   ├── test_preprocess_features.py
+│   └── test_threshold_modes.py
+│
+├── docs/                          # Supporting technical docs
+│   ├── CHANGELOG_EXPERIMENTS.md  # Experiment changelog
+│   └── RELEASE_NOTES_v1.0.0.md   # Previous release notes
 │
 ├── results/                       # Experiment results (not in git)
 │   ├── metrics/                  # Evaluation metrics (JSON)
@@ -374,13 +387,19 @@ paths:
 preprocess:
   window_size: 10 # Time window length
   stride: 1 # Window stride
-  scaler: standard # StandardScaler
+  scaler: standard # standard|minmax|robust
   benign_label: BENIGN # Normal traffic label
   test_size: 0.15 # Test split ratio
   val_size: 0.15 # Validation split ratio
   random_seed: 42 # Reproducibility
   shard_enable: true # Enable sharded processing
   shard_size: 50000 # Rows per shard
+  feature_filter:
+    enable_nzv: false
+    nzv_threshold: 1e-6
+    enable_corr: false
+    corr_threshold: 0.95
+    sample_rows_limit: 100000
 ```
 
 ### Training Hyperparameters
@@ -391,6 +410,9 @@ training:
   epochs: 100
   learning_rate: 0.001
   early_stopping_patience: 10
+  restore_best_weights: true
+  lr_scheduler: reduce_on_plateau # reduce_on_plateau|cosine|none
+  clipnorm: null # set numeric value (e.g., 1.0) to enable
   dropout: 0.2
   cnn_filters: [64, 128] # CNN filter sizes
   cnn_kernel_size: 3
@@ -407,6 +429,14 @@ threshold:
 evaluation:
   batch_size: 256
   sample_size: 200000 # Max samples for evaluation
+  mode: zero_shot # zero_shot|few_shot
+  threshold_method: percentile # percentile|target_percentile|target_gaussian
+  threshold_k_sigma: 2.5
+  few_shot_benign_frac: 0.01
+  few_shot_max_samples: 50000
+  few_shot_finetune_epochs: 0
+  few_shot_finetune_lr: 0.0005
+  few_shot_finetune_batch_size: 256
 ```
 
 To modify settings, edit `config.yaml` directly.
@@ -432,8 +462,9 @@ python scripts/preprocess.py --config config.yaml
 - Handles NaN/Inf values
 - Aligns features between datasets
 - Harmonizes CSE-CIC-IDS2018 column names to CIC-IDS2017 schema before feature intersection
+- (Optional) Applies statistical feature filtering (near-zero variance + high correlation)
 - Splits into train/val/test (only BENIGN for train/val)
-- Applies StandardScaler (fit on train only)
+- Applies configured scaler (`standard|minmax|robust`) fit on source benign train only
 - Creates windowed sequences (default: 10 timesteps)
 - Saves sharded NPZ files for memory-efficient loading
 
@@ -442,6 +473,7 @@ python scripts/preprocess.py --config config.yaml
 - `data/processed/shards/` - Sharded data files
 - `data/processed/scaler.pkl` - Fitted scaler
 - `data/processed/feature_columns.json` - Final aligned feature list + label column
+- `data/processed/feature_filter_report.json` - Feature filtering report (if enabled)
 
 **Time**: ~10-30 minutes depending on hardware
 
@@ -469,7 +501,7 @@ python scripts/train_cnn_lstm_ae.py --config config.yaml
 
 **Time**: ~1-3 hours (CPU) / ~15-30 minutes (GPU)
 
-#### 3. Compute Optimal Threshold
+#### 3. Compute Threshold (Optional Utility Script)
 
 Determine anomaly detection threshold:
 
@@ -485,13 +517,15 @@ python scripts/thresholding.py \
 - Computes percentile-based threshold from `config.yaml` (`threshold.percentile`)
 - Prints threshold value to stdout
 
+> Note: Main evaluation flow (`scripts/eval_metrics.py`) computes threshold internally using the configured evaluation mode and threshold method.
+
 **Outputs**:
 
 - Console output only (threshold is not saved by this script)
 
 **Time**: ~5-10 minutes
 
-#### 4. Evaluate on CIC-IDS2017 (In-Distribution)
+#### 4. Evaluate (CIC + CSE) - Zero-Shot or Few-Shot
 
 Evaluate on test set from same dataset:
 
@@ -504,7 +538,11 @@ python scripts/eval_metrics.py \
 
 **What it does**:
 
-- Computes threshold from CIC validation BENIGN windows (based on config percentile)
+- Reads evaluation strategy from `config.yaml`:
+  - `evaluation.mode=zero_shot` or `few_shot`
+  - `evaluation.threshold_method=percentile|target_percentile|target_gaussian`
+- Computes threshold according to selected method
+- For `few_shot`: samples benign target windows and can run lightweight unsupervised fine-tuning (optional)
 - Evaluates both CIC test and CSE test in one run
 - Calculates metrics (Accuracy, Precision, Recall, F1, AUC-ROC)
 - Generates plots (ROC curve, confusion matrix)
@@ -519,9 +557,19 @@ python scripts/eval_metrics.py \
 - `results/plots/cnn_lstm/cm_cic.png` - Confusion matrix (CIC)
 - `results/plots/cnn_lstm/cm_cse.png` - Confusion matrix (CSE)
 
-#### 5. Cross-Dataset Evaluation (CSE-CIC-IDS2018)
+##### Example: Run Both Modes with Separate Tags
 
-Test generalization to different dataset:
+```bash
+# Zero-shot
+python scripts/eval_metrics.py --config config.yaml --model models/cnn_lstm_ae/best_model.keras --tag cnn_lstm_zero_shot
+
+# Few-shot (set evaluation.mode=few_shot in config first)
+python scripts/eval_metrics.py --config config.yaml --model models/cnn_lstm_ae/best_model.keras --tag cnn_lstm_few_shot
+```
+
+#### 5. Cross-Dataset Evaluation Wrapper
+
+Convenience wrapper around the same evaluator:
 
 ```bash
 python scripts/cross_dataset_eval.py \
@@ -785,6 +833,18 @@ pip show scikit-learn
 pip install --force-reinstall scikit-learn==1.3.0
 ```
 
+#### 7. Few-Shot Evaluation Requires Sharded Data
+
+**Problem**: `ValueError: few_shot mode currently requires shard manifests`
+
+**Solution**:
+
+- Ensure preprocessing was run with shard mode enabled (`preprocess.shard_enable: true`)
+- Re-run preprocessing if shard manifests are missing
+- Verify files exist:
+  - `data/processed/shards/cic/val/manifest.json`
+  - `data/processed/shards/cse/test/manifest.json`
+
 ---
 
 ## 🤝 Contributing
@@ -809,6 +869,7 @@ This project is for academic research purposes. Please cite appropriately if you
 - **[KNOWLEDGE.md](KNOWLEDGE.md)**: Project knowledge base, concepts, and targets
 - **[SKILL.md](SKILL.md)**: Academic research agent skill for literature review
 - **[config.yaml](config.yaml)**: All configuration parameters
+- **[docs/CHANGELOG_EXPERIMENTS.md](docs/CHANGELOG_EXPERIMENTS.md)**: Experiment evolution and reproducibility notes
 
 ---
 
@@ -847,6 +908,6 @@ For issues or questions related to this research:
 
 ---
 
-**Last Updated**: February 2026  
+**Last Updated**: February 2026 (v1.1.0 experiment sync)  
 **Project Status**: Active Development  
 **Python Version**: 3.10 (Recommended)
