@@ -575,6 +575,9 @@ python scripts/eval_metrics.py \
 - `results/metrics/cnn_lstm_cse_metrics.json` - CSE metrics
 - `results/metrics/cnn_lstm_generalization_gap.json` - Gap analysis
 - `results/metrics/cnn_lstm_selection_report.json` - Threshold selection and policy metadata
+- `results/metrics/cnn_lstm_cic_standardized.json` - Standardized CIC record (flat schema)
+- `results/metrics/cnn_lstm_cse_standardized.json` - Standardized CSE record (flat schema)
+- `results/metrics/cnn_lstm_standardized_summary.json` - Combined standardized report
 - `results/plots/cnn_lstm/roc_cic.png` - ROC curve (CIC)
 - `results/plots/cnn_lstm/roc_cse.png` - ROC curve (CSE)
 - `results/plots/cnn_lstm/cm_cic.png` - Confusion matrix (CIC)
@@ -611,6 +614,22 @@ python scripts/cross_dataset_eval.py \
 - `results/metrics/cnn_lstm_cross_cic_metrics.json`
 - `results/metrics/cnn_lstm_cross_cse_metrics.json`
 - `results/metrics/cnn_lstm_cross_generalization_gap.json`
+- `results/metrics/cnn_lstm_cross_cic_standardized.json`
+- `results/metrics/cnn_lstm_cross_cse_standardized.json`
+
+### A/B Comparison Utility
+
+Use standardized metrics from baseline and candidate runs to evaluate decision gate (`mean F1 up` + `mean FPR down`):
+
+```bash
+python scripts/compare_ab.py \
+  --baseline-glob "results/baseline/*_cse_standardized.json" \
+  --candidate-glob "results/candidate/*_cse_standardized.json" \
+  --dataset CSE-CIC-IDS2018 \
+  --mode zero_shot \
+  --out-json results/comparison/ab_report.json \
+  --out-md results/comparison/ab_report.md
+```
 
 #### 6. Train & Evaluate Baselines
 

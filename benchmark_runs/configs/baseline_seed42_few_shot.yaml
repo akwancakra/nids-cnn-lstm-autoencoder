@@ -1,0 +1,100 @@
+paths:
+  data_raw_cic: data/raw/CIC-IDS2017
+  data_raw_cse: data/raw/CSE-CIC-IDS2018
+  data_processed: data/processed
+  models_dir: models
+  results_dir: results
+preprocess:
+  drop_columns:
+  - Flow ID
+  - Timestamp
+  - Src IP
+  - Source IP
+  - Dst IP
+  - Destination IP
+  - Src Port
+  - Source Port
+  - Dst Port
+  - Destination Port
+  - Protocol
+  label_candidates:
+  - Label
+  - label
+  - Class
+  - class
+  benign_label: BENIGN
+  scaler: robust
+  scaler_fit_mode: full_benign
+  feature_filter:
+    enable_nzv: true
+    nzv_threshold: 1.0e-06
+    enable_corr: true
+    corr_threshold: 0.95
+    sample_rows_limit: 100000
+  scale_guard:
+    enable: true
+    raw_clip_quantile: 0.999
+    raw_clip_sample_rows: 200000
+    post_scale_clip_abs: 20.0
+  fillna_value: 0.0
+  window_size: 10
+  stride: 1
+  test_size: 0.15
+  val_size: 0.15
+  random_seed: 42
+  sample_frac: null
+  max_rows_per_file: 300000
+  chunksize: 50000
+  split_by_file: true
+  shard_enable: true
+  shard_dir: data/processed/shards
+  shard_size: 20000
+  write_combined: false
+training:
+  force_cpu: false
+  batch_size: 128
+  epochs: 100
+  learning_rate: 0.001
+  early_stopping_patience: 20
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-06
+  lr_scheduler: reduce_on_plateau
+  warmup_epochs: 0
+  restore_best_weights: true
+  clipnorm: 1.0
+  dropout: 0.2
+  cnn_filters:
+  - 64
+  - 128
+  cnn_kernel_size: 3
+  lstm_units:
+  - 128
+  - 64
+  latent_dim: 32
+model_variant:
+  lstm_backbone: lstm
+  use_temporal_attention: false
+  multi_scale_kernels: []
+  reconstruction_loss: mse
+  dropout_schedule: []
+augmentation:
+  gaussian_noise_std: 0.0
+  feature_mask_ratio: 0.0
+  temporal_jitter_prob: 0.0
+  temporal_jitter_max_shift: 0
+threshold:
+  percentile: 99
+evaluation:
+  batch_size: 512
+  sample_size: 50000
+  mode: few_shot
+  zero_shot_strict: true
+  threshold_method: source_percentile
+  threshold_selection_policy: global_source_errors
+  threshold_k_sigma: 2.5
+  few_shot_benign_frac: 0.01
+  few_shot_max_samples: 10000
+  few_shot_finetune_epochs: 0
+  few_shot_finetune_lr: 0.0005
+  few_shot_finetune_batch_size: 256

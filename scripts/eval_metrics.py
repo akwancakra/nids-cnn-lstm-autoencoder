@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.utils import ensure_dir, load_json, load_yaml, save_json, setup_logging
+from scripts.standardized_metrics import build_standardized_record, compute_code_hash
 
 
 def reconstruction_errors(model, x: np.ndarray, batch_size: int = 256) -> np.ndarray:
@@ -365,6 +367,16 @@ def main() -> None:
     setup_logging()
     t0 = time.time()
 
+    force_cpu_cfg = bool(cfg.get("training", {}).get("force_cpu", False))
+    force_cpu_env = str(os.getenv("NIDS_FORCE_CPU", "0")).strip().lower() in {"1", "true", "yes"}
+    force_cpu = force_cpu_cfg or force_cpu_env
+    if force_cpu:
+        try:
+            tf.config.set_visible_devices([], "GPU")
+            logging.info("[STAGE] force_cpu enabled -> evaluation runs on CPU.")
+        except Exception as exc:
+            logging.warning("Could not force CPU mode cleanly: %s", exc)
+
     data_dir = Path(cfg["paths"]["data_processed"])
     results_dir = Path(cfg["paths"]["results_dir"])
     plots_dir = results_dir / "plots" / args.tag
@@ -375,6 +387,15 @@ def main() -> None:
     ensure_dir(metrics_dir)
 
     model = tf.keras.models.load_model(args.model)
+    seed = int(cfg["preprocess"].get("random_seed", 42))
+    code_hash = compute_code_hash(
+        [
+            Path(__file__),
+            ROOT / "scripts" / "preprocess.py",
+            ROOT / "scripts" / "train_cnn_lstm_ae.py",
+            ROOT / "scripts" / "train_lstm_ae.py",
+        ]
+    )
 
     eval_cfg = cfg.get("evaluation", {})
     eval_batch = int(eval_cfg.get("batch_size", 256))
@@ -600,6 +621,41 @@ def main() -> None:
     }
     save_json(metrics_dir / f"{args.tag}_generalization_gap.json", generalization_gap)
     save_json(metrics_dir / f"{args.tag}_selection_report.json", selection_report)
+
+    cic_standardized = build_standardized_record(
+        dataset="CIC-IDS2017",
+        metrics=cic_metrics,
+        threshold=threshold,
+        threshold_method=threshold_method,
+        mode=eval_mode,
+        seed=seed,
+        model_path=args.model,
+        tag=args.tag,
+        code_hash=code_hash,
+        config_snapshot=cfg,
+    )
+    cse_standardized = build_standardized_record(
+        dataset="CSE-CIC-IDS2018",
+        metrics=cse_metrics,
+        threshold=threshold,
+        threshold_method=threshold_method,
+        mode=eval_mode,
+        seed=seed,
+        model_path=args.model,
+        tag=args.tag,
+        code_hash=code_hash,
+        config_snapshot=cfg,
+    )
+    save_json(metrics_dir / f"{args.tag}_cic_standardized.json", cic_standardized)
+    save_json(metrics_dir / f"{args.tag}_cse_standardized.json", cse_standardized)
+    save_json(
+        metrics_dir / f"{args.tag}_standardized_summary.json",
+        {
+            "cic": cic_standardized,
+            "cse": cse_standardized,
+            "generalization_gap": generalization_gap,
+        },
+    )
     logging.info(
         "[DONE] Evaluation finished | f1_gap=%.4f auc_gap=%.4f acc_gap=%.4f duration=%s",
         generalization_gap["f1_gap"],
@@ -610,17 +666,25 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    physical_devices = tf.config.list_physical_devices("GPU")
-    if len(physical_devices) > 1:
+    force_cpu_env = str(os.getenv("NIDS_FORCE_CPU", "0")).strip().lower() in {"1", "true", "yes"}
+    if force_cpu_env:
         try:
-            tf.config.set_visible_devices(physical_devices[0], "GPU")
-            physical_devices = [physical_devices[0]]
-            print("[INFO] Multiple GPU adapters detected. Using only GPU:0 for stability.")
+            tf.config.set_visible_devices([], "GPU")
+            print("[INFO] NIDS_FORCE_CPU is set. GPU is disabled for evaluation.")
         except Exception as e:
-            print(f"[WARN] Could not set single visible GPU: {e}")
-    for gpu in physical_devices:
-        try:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        except Exception:
-            pass
+            print(f"[WARN] Could not disable GPU in bootstrap: {e}")
+    else:
+        physical_devices = tf.config.list_physical_devices("GPU")
+        if len(physical_devices) > 1:
+            try:
+                tf.config.set_visible_devices(physical_devices[0], "GPU")
+                physical_devices = [physical_devices[0]]
+                print("[INFO] Multiple GPU adapters detected. Using only GPU:0 for stability.")
+            except Exception as e:
+                print(f"[WARN] Could not set single visible GPU: {e}")
+        for gpu in physical_devices:
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            except Exception:
+                pass
     main()
