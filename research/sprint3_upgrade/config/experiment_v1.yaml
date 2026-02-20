@@ -1,0 +1,34 @@
+
+# Experiment Configuration: Sprint 3 Upgrade (SOTA Alignment)
+experiment_name: "sprint3_sota_upgrade_v1"
+description: "Replicating SOTA pipeline with clean MinMax scaling (0-1) and clipping."
+
+paths:
+  # Path relatif terhadap project root
+  raw_train: "data/raw/CIC-IDS2017" 
+  raw_test: "data/raw/CSE-CIC-IDS2018"
+  processed_data: "data/research/sprint3_upgrade/processed"
+  output_dir: "research/sprint3_upgrade/results"
+  model_save_dir: "research/sprint3_upgrade/models"
+
+preprocessing:
+  sequence_length: 10
+  stride: 1
+  scaler_type: "minmax"
+  clip_values: [0.0, 1.0] # Critical for SOTA performance
+
+model:
+  type: "mscnn_bilstm_ae"
+  input_shape: [10, 77] # Will be auto-detected, but good to have default
+  encoding_dim: 16
+  learning_rate: 0.0005
+
+training:
+  batch_size: 256
+  epochs: 50
+  validation_split: 0.1
+  patience: 5
+  verbose: 1
+
+thresholding:
+  percentile: 99.9 # Strict threshold
