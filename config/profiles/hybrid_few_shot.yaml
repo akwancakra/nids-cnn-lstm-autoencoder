@@ -1,0 +1,7 @@
+evaluation:
+  mode: few_shot
+  threshold_method: target_percentile
+  few_shot_benign_frac: 0.01
+  few_shot_max_samples: 50000
+  few_shot_finetune_epochs: 1
+  few_shot_finetune_lr: 0.0002

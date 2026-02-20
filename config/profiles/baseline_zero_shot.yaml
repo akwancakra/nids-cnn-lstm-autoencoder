@@ -1,0 +1,4 @@
+evaluation:
+  mode: zero_shot
+  threshold_method: percentile
+  few_shot_finetune_epochs: 0

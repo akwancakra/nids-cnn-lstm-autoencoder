@@ -1,0 +1,94 @@
+meta:
+  sprint: CSE_F1_SPRINT2
+  guardrail_cse_fpr_max: 0.20
+  guardrail_cse_f1_min: 0.24
+  weight_f1_gap: 0.50
+  weight_auc_gap: 0.30
+  weight_accuracy_gap: 0.20
+
+profiles:
+  hybrid_zero_shot:
+    profile_path: config/profiles/hybrid_zero_shot.yaml
+  hybrid_few_shot:
+    profile_path: config/profiles/hybrid_few_shot.yaml
+  baseline_zero_shot:
+    profile_path: config/profiles/baseline_zero_shot.yaml
+  baseline_few_shot:
+    profile_path: config/profiles/baseline_few_shot.yaml
+
+runs:
+  - run_id: s2_hybrid_zero_seed42_base
+    active: true
+    profile: hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s2_hybrid_zero_seed42_base
+    overrides:
+      preprocess:
+        random_seed: 42
+      threshold:
+        percentile: 99
+    notes: "Primary hybrid run with full isolation."
+
+  - run_id: s2_hybrid_few_seed42_tp99_eval
+    active: true
+    profile: hybrid_few_shot
+    model_variant: hybrid
+    stages: [eval]
+    reuse_artifacts_from: s2_hybrid_zero_seed42_base
+    tag: s2_hybrid_few_seed42_tp99_eval
+    overrides:
+      threshold:
+        percentile: 99
+    notes: "Eval-only few-shot; reuses source model and shard inputs from hybrid zero-shot run."
+
+  - run_id: s2_baseline_zero_seed42_base
+    active: true
+    profile: baseline_zero_shot
+    model_variant: baseline
+    stages: [preprocess, train, eval]
+    tag: s2_baseline_zero_seed42_base
+    overrides:
+      preprocess:
+        random_seed: 42
+      threshold:
+        percentile: 99
+    notes: "Primary baseline run (LSTM-AE) with full isolation."
+
+  - run_id: s2_baseline_few_seed42_tp99_eval
+    active: true
+    profile: baseline_few_shot
+    model_variant: baseline
+    stages: [eval]
+    reuse_artifacts_from: s2_baseline_zero_seed42_base
+    tag: s2_baseline_few_seed42_tp99_eval
+    overrides:
+      threshold:
+        percentile: 99
+    notes: "Eval-only few-shot baseline; reuses source model and shard inputs."
+
+  - run_id: s2_hybrid_zero_seed1234_candidate
+    active: false
+    profile: hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s2_hybrid_zero_seed1234_candidate
+    overrides:
+      preprocess:
+        random_seed: 1234
+      threshold:
+        percentile: 99
+    notes: "Template second-seed rerun for shortlisted hybrid candidate."
+
+  - run_id: s2_baseline_zero_seed1234_candidate
+    active: false
+    profile: baseline_zero_shot
+    model_variant: baseline
+    stages: [preprocess, train, eval]
+    tag: s2_baseline_zero_seed1234_candidate
+    overrides:
+      preprocess:
+        random_seed: 1234
+      threshold:
+        percentile: 99
+    notes: "Template second-seed rerun for shortlisted baseline candidate."

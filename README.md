@@ -296,7 +296,10 @@ CSE-CIC-IDS2018: 3 files
 
 ```
 nids-cnn-lstm-autoencoder/
-├── config.yaml                    # Main configuration file
+├── config.yaml                    # Legacy compatibility config entrypoint
+├── config/
+│   ├── base.yaml                  # Shared defaults
+│   └── profiles/                  # Scenario-specific overrides
 ├── requirements.txt               # Python dependencies
 ├── README.md                      # This file
 ├── TASKS.md                       # Implementation checklist
@@ -368,7 +371,15 @@ nids-cnn-lstm-autoencoder/
 
 ## ⚙️ Configuration
 
-The project uses a single `config.yaml` file for all settings. Key sections:
+Main setup now uses:
+
+- `config/base.yaml` for shared defaults
+- `config/profiles/*.yaml` for scenario-specific deltas
+- `research/sprint2/run_registry.yaml` for run selection and isolation policy
+
+Legacy `config.yaml` is still supported by scripts for backward compatibility.
+
+Key sections:
 
 ### Data Paths
 
@@ -447,6 +458,16 @@ To modify settings, edit `config.yaml` directly.
 ## 🚀 Usage
 
 ### Complete Workflow
+
+### Sprint2 Isolated Runner (Recommended for research experiments)
+
+```bash
+# Dry-run all active Sprint2 runs (no execution, generate per-run configs)
+python scripts/research_sprint2.py --registry research/sprint2/run_registry.yaml --base-config config/base.yaml --dry-run
+
+# Execute active runs with isolated outputs per run_id
+python scripts/research_sprint2.py --registry research/sprint2/run_registry.yaml --base-config config/base.yaml
+```
 
 #### 1. Data Preprocessing
 
@@ -873,7 +894,8 @@ This project is for academic research purposes. Please cite appropriately if you
 - **[TASKS.md](TASKS.md)**: Complete implementation checklist with 14 stages
 - **[KNOWLEDGE.md](KNOWLEDGE.md)**: Project knowledge base, concepts, and targets
 - **[SKILL.md](SKILL.md)**: Academic research agent skill for literature review
-- **[config.yaml](config.yaml)**: All configuration parameters
+- **[config/base.yaml](config/base.yaml)**: Shared configuration defaults
+- **[research/sprint2/run_registry.yaml](research/sprint2/run_registry.yaml)**: Isolated Sprint2 run definitions
 - **[docs/CHANGELOG_EXPERIMENTS.md](docs/CHANGELOG_EXPERIMENTS.md)**: Experiment evolution and reproducibility notes
 
 ---
