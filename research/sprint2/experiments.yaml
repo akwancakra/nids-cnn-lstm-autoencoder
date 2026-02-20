@@ -1,0 +1,225 @@
+meta:
+  sprint: CSE_F1_SPRINT2
+  report_title: RESEARCH_REPORT_CSE_F1_SPRINT2
+  baseline_id: rs20_baseline_reference
+  guardrail_max_cic_f1_drop: 0.05
+  guardrail_max_cse_fpr_increase: 0.02
+  guardrail_cse_fpr_max: 0.20
+  guardrail_cse_f1_min: 0.24
+  weight_f1_gap: 0.50
+  weight_auc_gap: 0.30
+  weight_accuracy_gap: 0.20
+  sweep_candidate_tags:
+    - rs28_full_scaleguard_q995_clip20
+    - rs29_full_scaleguard_q997_clip20
+    - rs30_full_scaleguard_q995_clip15
+
+experiments:
+  - id: rs20_baseline_reference
+    active: false
+    phase: baseline
+    description: Reference baseline metrics from previous standardized zero-shot run.
+    pipeline: []
+    metrics_tag: baseline_v1_1_seed42_zero_shot
+    overrides: {}
+
+  # A) Threshold policy (eval-only, zero-shot)
+  - id: rs21_zero_shot_percentile_replay
+    active: true
+    phase: A_threshold
+    description: Zero-shot replay with source percentile threshold.
+    pipeline: [eval]
+    tag: rs21_zero_shot_percentile_replay
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 99
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+        threshold_profile: guardrail_safe
+
+  - id: rs22_zero_shot_target_percentile_p98
+    active: true
+    phase: A_threshold
+    description: Zero-shot with target percentile calibration p98.
+    pipeline: [eval]
+    tag: rs22_zero_shot_target_percentile_p98
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 98
+      evaluation:
+        mode: zero_shot
+        threshold_method: target_percentile
+        threshold_profile: max_f1
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  - id: rs23_zero_shot_target_percentile_p99
+    active: true
+    phase: A_threshold
+    description: Zero-shot with target percentile calibration p99.
+    pipeline: [eval]
+    tag: rs23_zero_shot_target_percentile_p99
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 99
+      evaluation:
+        mode: zero_shot
+        threshold_method: target_percentile
+        threshold_profile: guardrail_safe
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  - id: rs24_zero_shot_target_gaussian_k20
+    active: true
+    phase: A_threshold
+    description: Zero-shot with target Gaussian threshold (k=2.0).
+    pipeline: [eval]
+    tag: rs24_zero_shot_target_gaussian_k20
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      evaluation:
+        mode: zero_shot
+        threshold_method: target_gaussian
+        threshold_k_sigma: 2.0
+        threshold_profile: guardrail_safe
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  # C) Few-shot safety (eval-only)
+  - id: rs25_fewshot_target_percentile_frac005_ft0
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile, 0.5% benign, no fine-tuning.
+    pipeline: [eval]
+    tag: rs25_fewshot_target_percentile_frac005_ft0
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 99
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        threshold_profile: max_f1
+        few_shot_benign_frac: 0.005
+        few_shot_finetune_epochs: 0
+
+  - id: rs26_fewshot_target_percentile_frac010_ft1_lr2e4
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile, 1.0% benign, fine-tune 1 epoch lr=2e-4.
+    pipeline: [eval]
+    tag: rs26_fewshot_target_percentile_frac010_ft1_lr2e4
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 99
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        threshold_profile: max_f1
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 1
+        few_shot_finetune_lr: 0.0002
+
+  - id: rs27_fewshot_target_percentile_frac020_ft1_lr2e4
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile, 2.0% benign, fine-tune 1 epoch lr=2e-4.
+    pipeline: [eval]
+    tag: rs27_fewshot_target_percentile_frac020_ft1_lr2e4
+    model_path: models/cnn_lstm_ae/backup_20260219_093813/best_model.keras
+    overrides:
+      threshold:
+        percentile: 99
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        threshold_profile: max_f1
+        few_shot_benign_frac: 0.02
+        few_shot_finetune_epochs: 1
+        few_shot_finetune_lr: 0.0002
+
+  # B) Preprocess lineage (full pipeline)
+  - id: rs28_full_scaleguard_q995_clip20
+    active: true
+    phase: B_preprocess
+    description: Full pipeline replay of guardrail-safe lineage q995 + clip20.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs28_full_scaleguard_q995_clip20
+    overrides:
+      preprocess:
+        random_seed: 42
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+        threshold_profile: guardrail_safe
+
+  - id: rs29_full_scaleguard_q997_clip20
+    active: true
+    phase: B_preprocess
+    description: Full pipeline variant with tighter raw clip quantile q997.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs29_full_scaleguard_q997_clip20
+    overrides:
+      preprocess:
+        random_seed: 42
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.997
+          post_scale_clip_abs: 20.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+        threshold_profile: guardrail_safe
+
+  - id: rs30_full_scaleguard_q995_clip15
+    active: true
+    phase: B_preprocess
+    description: Full pipeline variant with stronger post-scale clipping abs15.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs30_full_scaleguard_q995_clip15
+    overrides:
+      preprocess:
+        random_seed: 42
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 15.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+        threshold_profile: guardrail_safe
+
+  - id: rs31_full_feature_filter_corr090_q995_clip20
+    active: true
+    phase: B_preprocess
+    description: Full pipeline with corr 0.90 plus q995/clip20 scale guard.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs31_full_feature_filter_corr090_q995_clip20
+    overrides:
+      preprocess:
+        random_seed: 42
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+        threshold_profile: guardrail_safe

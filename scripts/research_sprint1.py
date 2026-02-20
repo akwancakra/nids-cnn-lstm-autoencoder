@@ -1,4 +1,4 @@
-"""Runner and summarizer for CSE-F1 sprint1 research experiments.
+"""Runner and summarizer for CSE-F1 research experiments.
 
 Usage examples:
   python scripts/research_sprint1.py --plan research/sprint1/experiments.yaml --base-config config.yaml --dry-run
@@ -307,6 +307,7 @@ def summarize(
             "mode": ev.get("mode"),
             "threshold_method": ev.get("threshold_method"),
             "threshold_k_sigma": ev.get("threshold_k_sigma"),
+            "threshold_profile": ev.get("threshold_profile", "default"),
             "few_shot_benign_frac": ev.get("few_shot_benign_frac"),
             "few_shot_max_samples": ev.get("few_shot_max_samples"),
             "few_shot_finetune_epochs": ev.get("few_shot_finetune_epochs"),
@@ -328,6 +329,8 @@ def summarize(
             "composite_gap_score": None,
             "passes_guardrail": None,
             "rank_gap_balanced": None,
+            "delta_vs_baseline_cse_f1": None,
+            "delta_vs_baseline_cse_fpr": None,
             "status": status,
             "notes": exp.get("description", ""),
         }
@@ -363,6 +366,18 @@ def summarize(
     for idx, row in enumerate(ranked_gap, start=1):
         row["rank_gap_balanced"] = idx
 
+    baseline_id = meta.get("baseline_id")
+    baseline = next((r for r in rows if r["id"] == baseline_id and r["status"] == "ok"), None)
+    baseline_cse_f1 = to_float(baseline.get("cse_f1")) if baseline else None
+    baseline_cse_fpr = to_float(baseline.get("cse_fpr")) if baseline else None
+    for row in rows:
+        row_cse_f1 = to_float(row.get("cse_f1"))
+        row_cse_fpr = to_float(row.get("cse_fpr"))
+        if baseline_cse_f1 is not None and row_cse_f1 is not None:
+            row["delta_vs_baseline_cse_f1"] = row_cse_f1 - baseline_cse_f1
+        if baseline_cse_fpr is not None and row_cse_fpr is not None:
+            row["delta_vs_baseline_cse_fpr"] = row_cse_fpr - baseline_cse_fpr
+
     summary_csv.parent.mkdir(parents=True, exist_ok=True)
     fields = list(rows[0].keys()) if rows else []
     with summary_csv.open("w", encoding="utf-8", newline="") as f:
@@ -370,8 +385,6 @@ def summarize(
         w.writeheader()
         w.writerows(rows)
 
-    baseline_id = meta.get("baseline_id")
-    baseline = next((r for r in rows if r["id"] == baseline_id and r["status"] == "ok"), None)
     valid_rows = [r for r in rows if r["status"] == "ok" and r["composite_gap_score"] is not None]
     ranked = sorted(valid_rows, key=lambda x: float(x["composite_gap_score"]))
 
@@ -380,9 +393,11 @@ def summarize(
 
     best_guardrail = next((r for r in ranked if guardrail_ok(r)), None)
     pending_ids = [r["id"] for r in rows if r["status"] != "ok"]
+    sprint_name = str(meta.get("sprint", "CSE_F1_SPRINT1")).strip()
+    report_title = str(meta.get("report_title", f"RESEARCH_REPORT_{sprint_name}")).strip()
 
     lines: list[str] = []
-    lines.append("# RESEARCH_REPORT_CSE_F1_SPRINT1")
+    lines.append(f"# {report_title}")
     lines.append("")
     lines.append(f"- generated_at: {datetime.now().isoformat()}")
     lines.append(f"- source_summary: `{summary_csv.as_posix()}`")
@@ -480,14 +495,14 @@ def main() -> None:
     parser.add_argument("--base-config", default="config.yaml")
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--default-model", default="models/cnn_lstm_ae/best_model.keras")
-    parser.add_argument("--generated-config-dir", default="research/sprint1/generated_configs")
+    parser.add_argument("--generated-config-dir", default=None)
     parser.add_argument("--run-ids", default=None, help="Comma-separated experiment IDs")
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--summarize-only", action="store_true")
     parser.add_argument("--no-summarize", action="store_true")
-    parser.add_argument("--summary-csv", default="results/metrics/summary_sprint1.csv")
-    parser.add_argument("--report-md", default="docs/RESEARCH_REPORT_CSE_F1_SPRINT1.md")
+    parser.add_argument("--summary-csv", default=None)
+    parser.add_argument("--report-md", default=None)
     parser.add_argument("--sweep-threshold", action="store_true")
     parser.add_argument("--candidate-tags", default=None, help="Comma-separated source tags for eval-only sweep")
     parser.add_argument("--sweep-percentiles", default=None, help="Comma-separated percentiles for threshold sweep")
@@ -505,8 +520,23 @@ def main() -> None:
     plan = load_yaml(root / args.plan)
     experiments: list[dict[str, Any]] = plan.get("experiments", [])
     meta: dict[str, Any] = plan.get("meta", {})
-    generated_dir = root / args.generated_config_dir
+    sprint_name = str(meta.get("sprint", "CSE_F1_SPRINT1")).strip()
+    sprint_slug = sprint_name.lower().replace("-", "_").replace(" ", "_")
+    if args.generated_config_dir:
+        generated_dir = root / args.generated_config_dir
+    else:
+        generated_dir = (root / args.plan).parent / "generated_configs"
     generated_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.summary_csv:
+        summary_csv_path = root / args.summary_csv
+    else:
+        summary_csv_path = root / "results" / "metrics" / f"summary_{sprint_slug}.csv"
+
+    if args.report_md:
+        report_md_path = root / args.report_md
+    else:
+        report_md_path = root / "docs" / f"RESEARCH_REPORT_{sprint_name}.md"
 
     if args.sweep_threshold:
         default_candidates = [exp_tag(e) for e in experiments if str(e.get("phase", "")).startswith("B_")]
@@ -578,13 +608,21 @@ def main() -> None:
             base_cfg=base_cfg,
             experiments=experiments,
             generated_dir=generated_dir,
-            summary_csv=root / args.summary_csv,
-            report_md=root / args.report_md,
+            summary_csv=summary_csv_path,
+            report_md=report_md_path,
             meta=meta,
             summary_cfg=summary_cfg,
         )
-        print(f"[DONE] summary: {args.summary_csv}")
-        print(f"[DONE] report: {args.report_md}")
+        try:
+            summary_print = summary_csv_path.relative_to(root).as_posix()
+        except ValueError:
+            summary_print = summary_csv_path.as_posix()
+        try:
+            report_print = report_md_path.relative_to(root).as_posix()
+        except ValueError:
+            report_print = report_md_path.as_posix()
+        print(f"[DONE] summary: {summary_print}")
+        print(f"[DONE] report: {report_print}")
 
 
 if __name__ == "__main__":
