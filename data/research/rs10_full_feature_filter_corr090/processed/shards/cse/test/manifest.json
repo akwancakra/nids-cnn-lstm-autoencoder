@@ -1,0 +1,730 @@
+{
+  "total_samples": 2999910,
+  "num_shards": 180,
+  "input_shape": [
+    10,
+    31
+  ],
+  "shards": [
+    {
+      "path": "cse/test/cse_test_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0001.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0002.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0003.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0005.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0007.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0008.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0009.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0010.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0011.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0012.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0013.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0014.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0015.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0016.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0017.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0018.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0019.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0020.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0021.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0022.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0023.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0024.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0025.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0026.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0027.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0028.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0029.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0030.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0031.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0032.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0033.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0034.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0035.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0036.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0037.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0038.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0039.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0040.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0041.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0042.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0043.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0044.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0045.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0046.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0047.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0048.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0049.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0050.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0051.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0052.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0053.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0054.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0055.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0056.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0057.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0058.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0059.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0060.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0061.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0062.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0063.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0064.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0065.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0066.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0067.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0068.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0069.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0070.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0071.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0072.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0073.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0074.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0075.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0076.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0077.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0078.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0079.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0080.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0081.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0082.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0083.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0084.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0085.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0086.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0087.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0088.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0089.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0090.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0091.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0092.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0093.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0094.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0095.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0096.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0097.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0098.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0099.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0100.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0101.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0102.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0103.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0104.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0105.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0106.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0107.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0108.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0109.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0110.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0111.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0112.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0113.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0114.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0115.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0116.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0117.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0118.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0119.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0120.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0121.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0122.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0123.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0124.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0125.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0126.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0127.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0128.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0129.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0130.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0131.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0132.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0133.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0134.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0135.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0136.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0137.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0138.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0139.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0140.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0141.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0142.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0143.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0144.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0145.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0146.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0147.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0148.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0149.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0150.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0151.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0152.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0153.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0154.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0155.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0156.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0157.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0158.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0159.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0160.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0161.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0162.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0163.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0164.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0165.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0166.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0167.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0168.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0169.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0170.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0171.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0172.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0173.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0174.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0175.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0176.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0177.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0178.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0179.npz",
+      "samples": 10000
+    }
+  ]
+}

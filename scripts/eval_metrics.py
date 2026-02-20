@@ -340,8 +340,10 @@ def main() -> None:
             sample_size=sample_size,
             benign_only=False,
         )
+        threshold_needs_target = threshold_method in {"target_percentile", "target_gaussian"}
         target_benign_errors = None
-        if eval_mode == "few_shot":
+        should_sample_target_benign = eval_mode == "few_shot" or threshold_needs_target
+        if should_sample_target_benign:
             adapt_x = sample_target_benign_windows(
                 cse_shards,
                 frac=few_shot_frac,
@@ -349,10 +351,23 @@ def main() -> None:
                 seed=int(cfg["preprocess"]["random_seed"]),
             )
             if adapt_x.size == 0:
-                raise ValueError("few_shot mode enabled, but no benign adaptation windows were sampled.")
-            logging.info("[PROGRESS] few_shot adaptation sample windows: %d", adapt_x.shape[0])
+                if threshold_needs_target:
+                    raise ValueError(
+                        f"threshold_method={threshold_method} requires target benign windows, "
+                        "but no adaptation windows were sampled."
+                    )
+                if eval_mode == "few_shot":
+                    raise ValueError("few_shot mode enabled, but no benign adaptation windows were sampled.")
+            else:
+                logging.info(
+                    "[PROGRESS] target benign adaptation sample windows: %d (mode=%s method=%s)",
+                    adapt_x.shape[0],
+                    eval_mode,
+                    threshold_method,
+                )
 
-            if few_shot_finetune_epochs > 0:
+            # Fine-tuning is only applied in explicit few-shot mode.
+            if eval_mode == "few_shot" and few_shot_finetune_epochs > 0:
                 model.compile(
                     optimizer=tf.keras.optimizers.Adam(learning_rate=few_shot_finetune_lr),
                     loss="mse",
@@ -366,7 +381,8 @@ def main() -> None:
                     verbose=1,
                 )
 
-            target_benign_errors = reconstruction_errors(model, adapt_x, batch_size=eval_batch)
+            if adapt_x.size > 0:
+                target_benign_errors = reconstruction_errors(model, adapt_x, batch_size=eval_batch)
 
         threshold = compute_threshold_value(
             method=threshold_method,
@@ -407,6 +423,10 @@ def main() -> None:
     else:
         if eval_mode == "few_shot":
             raise ValueError("few_shot mode currently requires shard manifests.")
+        if threshold_method in {"target_percentile", "target_gaussian"}:
+            raise ValueError(
+                f"threshold_method={threshold_method} requires shard manifests to sample target benign windows."
+            )
         val_npz = np.load(data_dir / "cic_val.npz")
         x_val = val_npz["x"].astype(np.float32)
 

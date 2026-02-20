@@ -1,0 +1,54 @@
+{
+  "total_samples": 154640,
+  "num_shards": 11,
+  "input_shape": [
+    10,
+    31
+  ],
+  "shards": [
+    {
+      "path": "cic/val/cic_val_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0001.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0002.npz",
+      "samples": 2212
+    },
+    {
+      "path": "cic/val/cic_val_0003.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0005.npz",
+      "samples": 2062
+    },
+    {
+      "path": "cic/val/cic_val_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0007.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0008.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/val/cic_val_0009.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0010.npz",
+      "samples": 366
+    }
+  ]
+}

@@ -1,27 +1,27 @@
 paths:
   data_raw_cic: data/raw/CIC-IDS2017
   data_raw_cse: data/raw/CSE-CIC-IDS2018
-  data_processed: data/processed
-  models_dir: models
-  results_dir: results
+  data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+  models_dir: models/research/rs11_full_scaleguard_q995_clip20
+  results_dir: results/research/rs11_full_scaleguard_q995_clip20
 preprocess:
   drop_columns:
-    - Flow ID
-    - Timestamp
-    - Src IP
-    - Source IP
-    - Dst IP
-    - Destination IP
-    - Src Port
-    - Source Port
-    - Dst Port
-    - Destination Port
-    - Protocol
+  - Flow ID
+  - Timestamp
+  - Src IP
+  - Source IP
+  - Dst IP
+  - Destination IP
+  - Src Port
+  - Source Port
+  - Dst Port
+  - Destination Port
+  - Protocol
   label_candidates:
-    - Label
-    - label
-    - Class
-    - class
+  - Label
+  - label
+  - Class
+  - class
   benign_label: BENIGN
   scaler: robust
   scaler_fit_mode: full_benign
@@ -33,7 +33,7 @@ preprocess:
     sample_rows_limit: 100000
   scale_guard:
     enable: true
-    raw_clip_quantile: 0.999
+    raw_clip_quantile: 0.995
     raw_clip_sample_rows: 200000
     post_scale_clip_abs: 20.0
   fillna_value: 0.0
@@ -47,7 +47,7 @@ preprocess:
   chunksize: 50000
   split_by_file: true
   shard_enable: true
-  shard_dir: data/processed/shards
+  shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
   shard_size: 20000
   write_combined: false
 training:
@@ -65,12 +65,12 @@ training:
   clipnorm: 1.0
   dropout: 0.2
   cnn_filters:
-    - 64
-    - 128
+  - 64
+  - 128
   cnn_kernel_size: 3
   lstm_units:
-    - 128
-    - 64
+  - 128
+  - 64
   latent_dim: 32
 threshold:
   percentile: 99

@@ -1,0 +1,197 @@
+meta:
+  sprint: CSE_F1_SPRINT1
+  baseline_id: rs00_release_baseline
+  guardrail_max_cic_f1_drop: 0.05
+  guardrail_max_cse_fpr_increase: 0.02
+  guardrail_cse_fpr_max: 0.20
+  guardrail_cse_f1_min: 0.24
+  weight_f1_gap: 0.50
+  weight_auc_gap: 0.30
+  weight_accuracy_gap: 0.20
+  sweep_candidate_tags:
+    - rs10_full_feature_filter_corr090
+    - rs11_full_scaleguard_q995_clip20
+    - rs12_full_scaleguard_q999_clip10
+
+experiments:
+  - id: rs00_release_baseline
+    active: false
+    phase: baseline
+    description: Existing release baseline from v1.1.0-experimental.
+    pipeline: []
+    metrics_tag: cnn_lstm
+    overrides: {}
+
+  # Batch A - Threshold / calibration
+  - id: rs01_zero_shot_percentile_replay
+    active: true
+    phase: A_threshold
+    description: Zero-shot replay with source percentile threshold.
+    pipeline: [eval]
+    tag: rs01_zero_shot_percentile_replay
+    overrides:
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+
+  - id: rs02_fewshot_target_percentile_frac001
+    active: true
+    phase: A_threshold
+    description: Few-shot target percentile threshold with 1% target benign sample.
+    pipeline: [eval]
+    tag: rs02_fewshot_target_percentile_frac001
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  - id: rs03_fewshot_target_percentile_frac002
+    active: true
+    phase: A_threshold
+    description: Few-shot target percentile threshold with 2% target benign sample.
+    pipeline: [eval]
+    tag: rs03_fewshot_target_percentile_frac002
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.02
+        few_shot_finetune_epochs: 0
+
+  - id: rs04_zero_shot_target_percentile_threshold_only
+    active: true
+    phase: A_threshold
+    description: Zero-shot with target percentile threshold calibration only (no fine-tune).
+    pipeline: [eval]
+    tag: rs04_zero_shot_target_percentile_threshold_only
+    overrides:
+      evaluation:
+        mode: zero_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  - id: rs05_zero_shot_target_gaussian_k20
+    active: true
+    phase: A_threshold
+    description: Zero-shot with target Gaussian threshold (k=2.0), threshold calibration only.
+    pipeline: [eval]
+    tag: rs05_zero_shot_target_gaussian_k20
+    overrides:
+      evaluation:
+        mode: zero_shot
+        threshold_method: target_gaussian
+        threshold_k_sigma: 2.0
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  # Batch C - Few-shot adaptation tuning
+  - id: rs06_fewshot_target_gaussian_k25
+    active: true
+    phase: C_fewshot
+    description: Few-shot with target Gaussian threshold (k=2.5), no fine-tune.
+    pipeline: [eval]
+    tag: rs06_fewshot_target_gaussian_k25
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_gaussian
+        threshold_k_sigma: 2.5
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 0
+
+  - id: rs07_fewshot_target_percentile_frac001_ft2_lr5e4
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile with fine-tune 2 epochs, lr=5e-4.
+    pipeline: [eval]
+    tag: rs07_fewshot_target_percentile_frac001_ft2_lr5e4
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0005
+
+  - id: rs08_fewshot_target_percentile_frac001_ft2_lr2e4
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile with fine-tune 2 epochs, lr=2e-4.
+    pipeline: [eval]
+    tag: rs08_fewshot_target_percentile_frac001_ft2_lr2e4
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0002
+
+  - id: rs09_fewshot_target_percentile_frac002_ft2_lr2e4
+    active: true
+    phase: C_fewshot
+    description: Few-shot target percentile with 2% benign sample and fine-tune 2 epochs, lr=2e-4.
+    pipeline: [eval]
+    tag: rs09_fewshot_target_percentile_frac002_ft2_lr2e4
+    overrides:
+      evaluation:
+        mode: few_shot
+        threshold_method: target_percentile
+        few_shot_benign_frac: 0.02
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0002
+
+  # Batch B - Preprocess/feature robustness (full pipeline)
+  - id: rs10_full_feature_filter_corr090
+    active: true
+    phase: B_preprocess
+    description: Full pipeline with stricter correlation filtering.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs10_full_feature_filter_corr090
+    overrides:
+      preprocess:
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+
+  - id: rs11_full_scaleguard_q995_clip20
+    active: true
+    phase: B_preprocess
+    description: Full pipeline with tighter raw clip quantile (0.995).
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs11_full_scaleguard_q995_clip20
+    overrides:
+      preprocess:
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+
+  - id: rs12_full_scaleguard_q999_clip10
+    active: true
+    phase: B_preprocess
+    description: Full pipeline with stronger post-scale clipping (abs=10).
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: rs12_full_scaleguard_q999_clip10
+    overrides:
+      preprocess:
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.999
+          post_scale_clip_abs: 10.0
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
