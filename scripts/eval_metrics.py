@@ -285,6 +285,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--model", default="models/cnn_lstm_ae/best_model.keras")
     parser.add_argument("--tag", default="cnn_lstm")
+    parser.add_argument("--threshold", type=float, default=None, help="Manual threshold override")
     args = parser.parse_args()
 
     cfg = load_yaml(args.config)
@@ -391,6 +392,10 @@ def main() -> None:
             percentile=float(cfg["threshold"]["percentile"]),
             k_sigma=threshold_k_sigma,
         )
+        if args.threshold is not None:
+            logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", args.threshold)
+            threshold = args.threshold
+            
         logging.info(
             "[DONE] Threshold selected | mode=%s method=%s value=%.8f",
             eval_mode,
@@ -438,7 +443,11 @@ def main() -> None:
         x_cse = cse_test["x"].astype(np.float32)
         y_cse = cse_test["y"].astype(np.int32)
 
-        threshold = np.percentile(reconstruction_errors(model, x_val), cfg["threshold"]["percentile"])
+        if args.threshold is not None:
+            threshold = args.threshold
+            logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", threshold)
+        else:
+            threshold = np.percentile(reconstruction_errors(model, x_val), cfg["threshold"]["percentile"])
 
         cic_scores = reconstruction_errors(model, x_cic)
         cse_scores = reconstruction_errors(model, x_cse)
