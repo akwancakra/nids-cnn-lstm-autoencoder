@@ -52,7 +52,7 @@ def get_benign_data(df):
         return df[df['Label'] == 'BENIGN'].drop(columns=['Label'], errors='ignore')
     return df
 
-def fit_scaler_incrementally(files, scaler):
+def fit_scaler_incrementally(files, scaler, extra_drop_cols=None):
     """
     Compute global Min/Max by iterating through files.
     """
@@ -60,7 +60,7 @@ def fit_scaler_incrementally(files, scaler):
     for f in tqdm(files, desc="Fitting Scaler"):
         try:
             df = pd.read_csv(f)
-            df = clean_dataframe(df)
+            df = clean_dataframe(df, extra_drop_cols)
             df = get_benign_data(df) # Only fit on Benign data
             
             # Ensure only numeric columns remain
