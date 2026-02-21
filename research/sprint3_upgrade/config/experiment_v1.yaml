@@ -7,6 +7,8 @@ paths:
   # Path relatif terhadap project root
   raw_train: "data/raw/CIC-IDS2017" 
   raw_test: "data/raw/CSE-CIC-IDS2018"
+  # Optional: Jika ingin evaluasi di CIC juga
+  raw_test_cic: "data/raw/CIC-IDS2017"
   processed_data: "data/research/sprint3_upgrade/processed"
   output_dir: "research/sprint3_upgrade/results"
   model_save_dir: "research/sprint3_upgrade/models"
