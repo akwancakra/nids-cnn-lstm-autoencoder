@@ -9,7 +9,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 import sys
 
-def clean_dataframe(df):
+def clean_dataframe(df, extra_drop_cols=None):
     """
     Clean the dataframe: drop non-numeric, handle Inf/NaN.
     """
@@ -21,6 +21,9 @@ def clean_dataframe(df):
         'Flow ID', 'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
         'Protocol', 'Timestamp', 'SimillarHTTP', 'Inbound', 'Unnamed: 0'
     ]
+    
+    if extra_drop_cols:
+        drop_cols.extend(extra_drop_cols)
     
     # Drop existing columns
     df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
@@ -99,12 +102,12 @@ def create_label_sequences(labels, seq_len, stride):
             sequences.append(0)
     return np.array(sequences)
 
-def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id):
+def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id, extra_drop_cols=None):
     """
     Process a single dataframe and save as npz shard.
     """
     # 1. Clean
-    df = clean_dataframe(df)
+    df = clean_dataframe(df, extra_drop_cols)
     
     # 2. Handle Label
     labels = None
@@ -190,7 +193,7 @@ def main():
     # 2. Fit Scaler (MinMax 0-1)
     # Use GlobalScaler logic: Fit on Benign Training Data ONLY
     scaler = MinMaxScaler(feature_range=(0, 1))
-    scaler = fit_scaler_incrementally(train_files, scaler)
+    scaler = fit_scaler_incrementally(train_files, scaler, extra_drop_cols)
     
     # Save Scaler
     os.makedirs(args.output_dir, exist_ok=True)
@@ -206,7 +209,7 @@ def main():
     for f in tqdm(train_files, desc="Processing Train Data"):
         try:
             df = pd.read_csv(f)
-            if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count):
+            if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count, extra_drop_cols):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
@@ -220,7 +223,7 @@ def main():
         try:
             df = pd.read_csv(f)
             # Use 'test' mode to preserve Attack labels
-            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count):
+            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
@@ -234,7 +237,7 @@ def main():
         try:
             df = pd.read_csv(f)
             # Use 'test' mode to preserve Attack labels from CIC-IDS2017
-            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count):
+            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
