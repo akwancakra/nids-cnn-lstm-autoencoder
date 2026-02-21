@@ -216,11 +216,25 @@ def main():
     os.makedirs(test_out, exist_ok=True)
     
     shard_count = 0
-    for f in tqdm(test_files, desc="Processing Test Data"):
+    for f in tqdm(test_files, desc="Processing Test Data (CSE-CIC-IDS2018)"):
         try:
             df = pd.read_csv(f)
             # Use 'test' mode to preserve Attack labels
             if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count):
+                shard_count += 1
+        except Exception as e:
+            print(f"Error processing {f}: {e}")
+            
+    # 5. Process CIC-IDS2017 Test Data (Mixed)
+    test_cic_out = os.path.join(args.output_dir, "test_cic")
+    os.makedirs(test_cic_out, exist_ok=True)
+    
+    shard_count = 0
+    for f in tqdm(train_files, desc="Processing Test Data (CIC-IDS2017)"):
+        try:
+            df = pd.read_csv(f)
+            # Use 'test' mode to preserve Attack labels from CIC-IDS2017
+            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
