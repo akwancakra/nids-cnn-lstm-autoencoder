@@ -20,7 +20,7 @@ preprocessing:
   clip_values: [0.0, 1.0] # Critical for SOTA performance
 
 model:
-  type: "mscnn_bilstm_ae"
+  type: "cnn_lstm_ae"
   input_shape: [10, 77] # Will be auto-detected, but good to have default
   encoding_dim: 16
   learning_rate: 0.0005
@@ -33,4 +33,4 @@ training:
   verbose: 1
 
 thresholding:
-  percentile: 99.9 # Strict threshold
+  percentile: 99.0 # Strict threshold
