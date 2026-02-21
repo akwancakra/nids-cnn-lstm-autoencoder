@@ -1,11 +1,10 @@
-
 # Experiment Configuration: Sprint 3 Upgrade (SOTA Alignment)
 experiment_name: "sprint3_sota_upgrade_v1"
 description: "Replicating SOTA pipeline with clean MinMax scaling (0-1) and clipping."
 
 paths:
   # Path relatif terhadap project root
-  raw_train: "data/raw/CIC-IDS2017" 
+  raw_train: "data/raw/CIC-IDS2017"
   raw_test: "data/raw/CSE-CIC-IDS2018"
   # Optional: Jika ingin evaluasi di CIC juga
   raw_test_cic: "data/raw/CIC-IDS2017"
@@ -33,4 +32,4 @@ training:
   verbose: 1
 
 thresholding:
-  percentile: 99.0 # Strict threshold
+  percentile: 95.0 # Strict threshold
