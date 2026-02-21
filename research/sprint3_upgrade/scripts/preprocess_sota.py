@@ -170,8 +170,19 @@ def main():
     parser.add_argument("--output_dir", type=str, required=True, help="Output directory for processed data")
     parser.add_argument("--seq_len", type=int, default=10, help="Sequence length")
     parser.add_argument("--stride", type=int, default=1, help="Sliding window stride")
+    parser.add_argument("--drop_features", type=str, default=None, help="Comma-separated list of features to drop or path to file")
     
     args = parser.parse_args()
+    
+    # Load drop features
+    extra_drop_cols = []
+    if args.drop_features:
+        if os.path.exists(args.drop_features):
+            with open(args.drop_features, 'r') as f:
+                extra_drop_cols = [line.strip() for line in f if line.strip()]
+        else:
+            extra_drop_cols = [x.strip() for x in args.drop_features.split(',')]
+        print(f"Dropping {len(extra_drop_cols)} features: {extra_drop_cols}")
     
     # Expand wildcards
     def get_files(path_pattern):
