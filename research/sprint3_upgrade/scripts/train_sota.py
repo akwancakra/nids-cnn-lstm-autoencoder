@@ -13,43 +13,28 @@ from pathlib import Path
 
 # Import model definition (assuming it exists in scripts/models or define it here)
 # For simplicity, we define the model here to match SOTA exactly
-from tensorflow.keras.layers import Input, Conv1D, MaxPooling1D, Concatenate, Bidirectional, LSTM, Dropout, Flatten, Dense, RepeatVector, UpSampling1D
+from tensorflow.keras.layers import Input, Conv1D, LSTM, Dropout, Dense, RepeatVector
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
-def build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=16, learning_rate=0.0005):
+def build_cnn_lstm_ae(input_shape, encoding_dim=16, learning_rate=0.0005):
     inputs = Input(shape=input_shape)
-    
-    # Encoder — Multi-scale CNN
-    conv1 = Conv1D(filters=32, kernel_size=3, activation='relu', padding='same')(inputs)
-    conv2 = Conv1D(filters=32, kernel_size=5, activation='relu', padding='same')(inputs)
-    conv3 = Conv1D(filters=32, kernel_size=7, activation='relu', padding='same')(inputs)
-    
-    pool1 = MaxPooling1D(pool_size=2)(conv1)
-    pool2 = MaxPooling1D(pool_size=2)(conv2)
-    pool3 = MaxPooling1D(pool_size=2)(conv3)
-    
-    concat = Concatenate()([pool1, pool2, pool3])
-    
-    bilstm1 = Bidirectional(LSTM(64, return_sequences=True))(concat)
-    dropout1 = Dropout(0.2)(bilstm1)
-    
-    flatten = Flatten()(dropout1)
-    encoded = Dense(encoding_dim, activation='relu')(flatten)
-    
-    # Decoder
-    repeat = RepeatVector(input_shape[0] // 2)(encoded)
-    
-    bilstm2 = Bidirectional(LSTM(64, return_sequences=True))(repeat)
-    dropout2 = Dropout(0.2)(bilstm2)
-    
-    upsample = UpSampling1D(size=2)(dropout2)
-    
-    decoded = Conv1D(filters=input_shape[1], kernel_size=3, activation='sigmoid', padding='same')(upsample)
-    
+
+    # Encoder — CNN feature extraction + LSTM temporal encoding
+    conv1 = Conv1D(32, 3, activation='relu', padding='same')(inputs)
+    conv2 = Conv1D(64, 3, activation='relu', padding='same')(conv1)
+    lstm_enc = LSTM(64, return_sequences=False)(conv2)
+    dropout1 = Dropout(0.2)(lstm_enc)
+    encoded = Dense(encoding_dim, activation='relu')(dropout1)
+
+    # Decoder — LSTM temporal decoding + CNN reconstruction
+    repeat = RepeatVector(input_shape[0])(encoded)
+    lstm_dec = LSTM(64, return_sequences=True)(repeat)
+    dropout2 = Dropout(0.2)(lstm_dec)
+    decoded = Conv1D(input_shape[1], 3, activation='sigmoid', padding='same')(dropout2)
+
     autoencoder = Model(inputs, decoded)
     autoencoder.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
-    
     return autoencoder
 
 # Data Pipeline (Memory Efficient)
@@ -150,7 +135,7 @@ def main():
     print(f"Detected Input Shape: {input_shape}")
     
     lr = config['model'].get('learning_rate', 0.0005)
-    model = build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=config['model']['encoding_dim'], learning_rate=lr)
+    model = build_cnn_lstm_ae(input_shape, encoding_dim=config['model']['encoding_dim'], learning_rate=lr)
     model.summary()
     
     # 3. Train

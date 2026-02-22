@@ -1,0 +1,61 @@
+---
+description: Deep learning dengan TensorFlow/Keras - CNN-LSTM Autoencoder untuk NIDS
+globs: "**/research/**/*.py, **/research/**/*.ipynb, **/scripts/**/*.py"
+---
+
+You are an expert in deep learning with TensorFlow/Keras, specializing in CNN-LSTM Autoencoder for Network Intrusion Detection Systems (NIDS).
+
+## Key Principles
+
+- Gunakan TensorFlow/Keras functional API untuk semua arsitektur model
+- GPU-agnostic: jangan hardcode device, biarkan TensorFlow auto-detect
+- Semua hyperparameter harus dibaca dari config YAML, tidak boleh hardcoded di kode
+- Modular: pisah file untuk preprocessing, model, training, dan evaluation
+
+## Model Architecture (CNN-LSTM Autoencoder)
+
+- Input shape harus selalu auto-detected dari data, tidak boleh hardcoded
+- Encoder: Conv1D (spatial) → MaxPooling1D → LSTM (temporal) → Dense bottleneck
+- Decoder: RepeatVector → LSTM → UpSampling1D → Conv1D (reconstruct)
+- Bottleneck dimension dikontrol via config `encoding_dim`
+- Output layer menggunakan aktivasi `sigmoid` (data sudah di-normalize ke [0,1])
+
+## Preprocessing Rules (KRITIKAL)
+
+- Scaler (QuantileTransformer/MinMaxScaler) HARUS di-fit HANYA pada data Benign train
+- Scaler HARUS di-fit pada seluruh training data, bukan subsample
+- Setelah fit, transform diaplikasikan ke train DAN test tanpa refit
+- Test data di-clip ke [0, 1] setelah transform untuk handle outlier
+- Feature selection (NZV + korelasi) dihitung dari full data, bukan benign-only sample
+- `selected_features` list HARUS disimpan ke file dan dipakai konsisten di train/test
+- Fitur yang di-drop dari drift analysis harus menggunakan nama kolom CSV asli, bukan indeks posisi (f1, f29, dst)
+- stride untuk sliding window: gunakan nilai >= sequence_length untuk menghindari overlap berlebihan (stride=1 menyebabkan data bengkak dan overfitting)
+
+## Training Rules
+
+- Gunakan `tf.data.Dataset` generator untuk data loading (memory efficient)
+- EarlyStopping wajib dengan `min_delta=0.0005` dan `patience=10` untuk menghindari stop terlalu dini atau terlalu lambat
+- Learning rate harus dibaca dari config, jangan pakai Adam default
+- Checkpoint model terbaik dengan `ModelCheckpoint(save_best_only=True)`
+- Validation set harus dipisah dari train set SEBELUM membuat dataset, bukan dengan `.take/.skip` dari dataset yang sama
+
+## Evaluation Rules (KRITIKAL)
+
+- Threshold HARUS ditentukan ulang setiap kali model diretrain, tidak boleh reuse threshold dari run sebelumnya
+- Threshold dihitung dari percentile rekonstruksi error pada validation set Benign (baca dari config `thresholding.percentile`)
+- Untuk cross-domain evaluation, gunakan threshold yang dihitung dari distribusi model baru, bukan nilai hardcoded
+- `create_eval_dataset` harus menerima `feat_dim` dan `timesteps` secara eksplisit dari `model.input_shape`, bukan dari `locals()`
+- Validasi shape tiap file NPZ sebelum dimasukkan ke dataset — skip file yang tidak sesuai dengan log yang jelas
+
+## test_cic vs test_cse
+
+- `test_cic` = CIC-IDS2017 data yang BELUM dipakai training (harus file terpisah dari train_files)
+- `test_cse` = CSE-CIC-IDS2018 (cross-domain, dataset berbeda)
+- Jangan proses ulang `train_files` sebagai `test_cic` — ini menghasilkan data leakage
+
+## Code Conventions
+
+- Type hints pada semua fungsi
+- Semua path menggunakan `pathlib.Path`, bukan string concatenation
+- Reproducibility: set seed untuk `tf`, `numpy`, dan `random` di awal script
+- Simpan scaler, selected_features, dan threshold ke disk setelah training untuk reproducibility
