@@ -88,7 +88,10 @@ def clean_dataframe(df, extra_drop_cols=None, mapper=None):
     """
     Clean the dataframe: drop non-numeric, handle Inf/NaN, and optionally map columns.
     """
-    # 0. Mapping
+    # 0. Deduplicate columns first (common in CIC-IDS2017)
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+
+    # 1. Mapping
     if mapper:
         df = df.rename(columns=mapper)
 
@@ -103,22 +106,31 @@ def clean_dataframe(df, extra_drop_cols=None, mapper=None):
         'Dst Port', 'Src IP', 'Src Port', 'Dst IP'
     ]
     
+    actual_to_drop = [c for c in drop_cols if c in df.columns]
     if extra_drop_cols:
-        drop_cols.extend(extra_drop_cols)
+        for c in extra_drop_cols:
+            if c in df.columns:
+                actual_to_drop.append(c)
+            elif re.match(r'^f\d+$', str(c)):
+                idx = int(c[1:])
+                if idx < len(df.columns):
+                    actual_to_drop.append(df.columns[idx])
     
     # Drop columns if they exist (before numeric conversion)
-    df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
+    df = df.drop(columns=list(set(actual_to_drop)), errors='ignore')
     
     # Force numeric conversion for remaining columns (except Label) 
     # This handles mixed types loaded as objects
-    for col in df.columns:
+    # Use loop with iloc to avoid issues with potential duplicates/series mismatches
+    for i, col in enumerate(df.columns):
         if col != 'Label':
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df.iloc[:, i] = pd.to_numeric(df.iloc[:, i], errors='coerce')
+    
+    # Replace Inf with NaN
+    df = df.replace([np.inf, -np.inf], np.nan)
     
     # Drop rows with NaN (including those created by coerce)
     df = df.dropna()
-    
-    # Standardize Label column if it exists
     if 'Label' in df.columns:
         df['Label'] = df['Label'].astype(str).str.strip().str.upper()
         # Remove header rows that might have leaked into the data
@@ -215,9 +227,17 @@ def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_
     
     # 3. Filter Features (Drop drift + NZV/Corr)
     if selected_features:
-        # Ensure selected_features exist in df
-        avail = [f for f in selected_features if f in df.columns]
-        df = df[avail]
+        # ENSURE all selected features are present and in the RIGHT ORDER
+        # Fill missing with 0 to maintain shape consistency
+        final_cols = []
+        for feat in selected_features:
+            if feat in df.columns:
+                final_cols.append(feat)
+            else:
+                # Log or handle missing feature
+                df[feat] = 0.0
+                final_cols.append(feat)
+        df = df[selected_features] # Use exact list for alignment
     else:
         # Fallback: Ensure only numeric columns
         df = df.select_dtypes(include=[np.number])
@@ -384,6 +404,8 @@ def main():
             print(f"Error processing {f}: {e}")
             
     # 5. Process CIC-IDS2017 Test Data (Mixed)
+    test_cic_out = os.path.join(args.output_dir, "test_cic")
+    os.makedirs(test_cic_out, exist_ok=True)
             
     shard_count = 0
     for f in tqdm(train_files, desc="Processing Test (CIC)"):
