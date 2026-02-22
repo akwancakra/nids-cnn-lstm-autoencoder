@@ -9,6 +9,62 @@ from sklearn.preprocessing import MinMaxScaler, QuantileTransformer
 from tqdm import tqdm
 import sys
 
+import re
+from typing import List, Tuple, Optional, Iterable
+
+def canonical_key(name: str) -> str:
+    """Standardize feature names for cross-dataset mapping."""
+    # Convert to string and strip
+    x = str(name).strip()
+    
+    # Remove trailing .1 (found in Fwd Header Length.1)
+    x = re.sub(r"\.\d+$", "", x)
+    
+    # Split camelCase or joined words (like TotLen or InitFwd)
+    x = re.sub(r"([a-z])([A-Z])", r"\1 \2", x)
+    
+    x = x.lower()
+    x = x.replace("/", " ")
+    x = re.sub(r"[_\-]+", " ", x)
+    x = re.sub(r"\s+", " ", x)
+
+    replacements = {
+        "dst": "destination", "src": "source", "byts": "bytes", "byt": "byte",
+        "pkts": "packets", "pkt": "packet", "cnt": "count",
+        "len": "length", "avg": "average", "tot": "total", 
+        "seg": "segment", "fwd": "forward", "bwd": "backward",
+        "init": "initialization", "win": "window", "act": "active"
+    }
+
+    tokens = []
+    for tok in x.split():
+        tok = replacements.get(tok, tok)
+        # Handle pluralization simply for matching
+        if tok.endswith("s") and len(tok) > 3:
+            tok = tok[:-1]
+        tokens.append(tok)
+    
+    # Final cleanup of common stop words in these datasets
+    stop_words = {"of", "size"} # "size" can be inconsistent but usually paired
+    tokens = [t for t in tokens if t not in stop_words]
+    
+    tokens.sort()
+    return " ".join(tokens)
+
+def build_column_mapper(source_cols: List[str], target_cols: List[str]) -> dict[str, str]:
+    """Map target columns to source/reference columns using canonical keys."""
+    key_to_ref: dict[str, str] = {}
+    for col in source_cols:
+        key = canonical_key(col)
+        key_to_ref[key] = col
+
+    mapper: dict[str, str] = {}
+    for col in target_cols:
+        key = canonical_key(col)
+        if key in key_to_ref:
+            mapper[col] = key_to_ref[key]
+    return mapper
+
 def select_features_by_statistics(sample_df, nzv_threshold=0.01, corr_threshold=0.9):
     """
     Perform NZV and Correlation filtering on a sample dataframe.
@@ -28,24 +84,39 @@ def select_features_by_statistics(sample_df, nzv_threshold=0.01, corr_threshold=
     
     return selected.tolist(), dropped_nzv, []
 
-def clean_dataframe(df, extra_drop_cols=None):
+def clean_dataframe(df, extra_drop_cols=None, mapper=None):
     """
-    Clean the dataframe: drop non-numeric, handle Inf/NaN.
+    Clean the dataframe: drop non-numeric, handle Inf/NaN, and optionally map columns.
     """
-    # Standardize column names
+    # 0. Mapping
+    if mapper:
+        df = df.rename(columns=mapper)
+
+    # Standardize column names (strip)
     df.columns = df.columns.str.strip()
-    
-    # Columns to drop (identifiers, timestamps)
+
+    # Columns to drop (identifiers, timestamps) - Canonical drop list
     drop_cols = [
         'Flow ID', 'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
-        'Protocol', 'Timestamp', 'SimillarHTTP', 'Inbound', 'Unnamed: 0'
+        'Protocol', 'Timestamp', 'SimillarHTTP', 'Inbound', 'Unnamed: 0',
+        # CSE-IDS specific variations
+        'Dst Port', 'Src IP', 'Src Port', 'Dst IP'
     ]
     
     if extra_drop_cols:
         drop_cols.extend(extra_drop_cols)
     
-    # Drop existing columns
+    # Drop columns if they exist (before numeric conversion)
     df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
+    
+    # Force numeric conversion for remaining columns (except Label) 
+    # This handles mixed types loaded as objects
+    for col in df.columns:
+        if col != 'Label':
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Drop rows with NaN (including those created by coerce)
+    df = df.dropna()
     
     # Standardize Label column if it exists
     if 'Label' in df.columns:
@@ -55,9 +126,6 @@ def clean_dataframe(df, extra_drop_cols=None):
     
     # Replace Inf with NaN
     df = df.replace([np.inf, -np.inf], np.nan)
-    
-    # Drop rows with NaN
-    df = df.dropna()
     
     return df
 
@@ -121,12 +189,16 @@ def create_label_sequences(labels, seq_len, stride):
             sequences.append(0)
     return np.array(sequences)
 
-def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id, extra_drop_cols=None, selected_features=None):
+def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id, extra_drop_cols=None, selected_features=None, master_columns=None):
     """
     Process a single dataframe and save as npz shard.
     """
-    # 1. Clean
-    df = clean_dataframe(df, extra_drop_cols)
+    # 0. Mapping for consistency across datasets (especially for Test)
+    if master_columns is not None:
+        mapper = build_column_mapper(master_columns, df.columns.tolist())
+        df = clean_dataframe(df, extra_drop_cols, mapper)
+    else:
+        df = clean_dataframe(df, extra_drop_cols)
     
     # 2. Handle Label
     labels = None
@@ -204,10 +276,15 @@ def main():
     extra_drop_cols = []
     if args.drop_features:
         if os.path.exists(args.drop_features):
-            with open(args.drop_features, 'r') as f:
-                extra_drop_cols = [line.strip() for line in f if line.strip()]
+            print(f"Loading drop list from: {args.drop_features}")
+            try:
+                with open(args.drop_features, 'r', encoding='utf-8') as f:
+                    extra_drop_cols = [line.strip() for line in f if line.strip()]
+            except Exception as e:
+                print(f"Error reading drop list file: {e}")
         else:
-            extra_drop_cols = [x.strip() for x in args.drop_features.split(',')]
+            print(f"Drop list file NOT FOUND at: {args.drop_features}. Treating as comma-separated list.")
+            extra_drop_cols = [x.strip() for x in args.drop_features.split(',') if x.strip()]
         print(f"Dropping {len(extra_drop_cols)} features: {extra_drop_cols}")
     
     # Expand wildcards
@@ -231,9 +308,15 @@ def main():
     print("Collecting sample for feature selection...")
     sample_dfs = []
     total_samples = 0
+    # Capture original columns for mapping references later
+    master_columns = None
+    
     for f in train_files[:10]: # Use first 10 files as sample
-        df = pd.read_csv(f)
+        df = pd.read_csv(f, low_memory=False)
         df = clean_dataframe(df, extra_drop_cols)
+        if master_columns is None:
+            master_columns = df.columns.tolist()
+        
         df = get_benign_data(df)
         df = df.select_dtypes(include=[np.number])
         if not df.empty:
@@ -254,11 +337,10 @@ def main():
     else:
         scaler = MinMaxScaler(feature_range=(0, 1))
         
-    # Fit scaler on selected features only
     print("Fitting Scaler on selected features...")
     for f in tqdm(train_files, desc="Fitting Scaler"):
         try:
-            df = pd.read_csv(f)
+            df = pd.read_csv(f, low_memory=False)
             df = clean_dataframe(df, extra_drop_cols)
             df = get_benign_data(df)
             df = df[selected_features] # Use only selected
@@ -281,10 +363,12 @@ def main():
     
     shard_count = 0
     for f in tqdm(train_files, desc="Processing Train"):
-        df = pd.read_csv(f)
-        # process_and_save_shard needs to know about selected_features
-        if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count, extra_drop_cols, selected_features):
-            shard_count += 1
+        try:
+            df = pd.read_csv(f, low_memory=False)
+            if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count, extra_drop_cols, selected_features, master_columns):
+                shard_count += 1
+        except Exception as e:
+            print(f"Error processing {f}: {e}")
             
     # 4. Process Test Data (Mixed)
     test_out = os.path.join(args.output_dir, "test")
@@ -293,21 +377,19 @@ def main():
     shard_count = 0
     for f in tqdm(test_files, desc="Processing Test (CSE)"):
         try:
-            df = pd.read_csv(f)
-            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features):
+            df = pd.read_csv(f, low_memory=False)
+            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features, master_columns):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
             
     # 5. Process CIC-IDS2017 Test Data (Mixed)
-    test_cic_out = os.path.join(args.output_dir, "test_cic")
-    os.makedirs(test_cic_out, exist_ok=True)
-    
+            
     shard_count = 0
     for f in tqdm(train_files, desc="Processing Test (CIC)"):
         try:
-            df = pd.read_csv(f)
-            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features):
+            df = pd.read_csv(f, low_memory=False)
+            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features, master_columns):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
