@@ -294,16 +294,19 @@ def main():
     extra_drop_cols = []
     if args.drop_features:
         if os.path.exists(args.drop_features):
-            print(f"Loading drop list from: {args.drop_features}")
+            print(f"DEBUG: Found drop list file at {args.drop_features}")
             try:
-                with open(args.drop_features, 'r', encoding='utf-8') as f:
-                    extra_drop_cols = [line.strip() for line in f if line.strip()]
+                with open(args.drop_features, 'r') as f:
+                    lines = f.readlines()
+                    extra_drop_cols = [line.strip() for line in lines if line.strip()]
+                print(f"DEBUG: Read {len(extra_drop_cols)} columns from file.")
             except Exception as e:
                 print(f"Error reading drop list file: {e}")
         else:
             print(f"Drop list file NOT FOUND at: {args.drop_features}. Treating as comma-separated list.")
             extra_drop_cols = [x.strip() for x in args.drop_features.split(',') if x.strip()]
-        print(f"Dropping {len(extra_drop_cols)} features: {extra_drop_cols}")
+    
+    print(f"Total features to drop (extra): {len(extra_drop_cols)} -> {extra_drop_cols}")
     
     # Expand wildcards
     def get_files(path_pattern):
@@ -352,20 +355,22 @@ def main():
     
     if args.scaler_type == "quantile":
         scaler = QuantileTransformer(output_distribution="uniform", n_quantiles=1000, random_state=42)
+        print("Fitting QuantileTransformer on collected sample (non-incremental)...")
+        # Fit once on the collected sample
+        scaler.fit(sample_comb[selected_features].values)
     else:
         scaler = MinMaxScaler(feature_range=(0, 1))
-        
-    print("Fitting Scaler on selected features...")
-    for f in tqdm(train_files, desc="Fitting Scaler"):
-        try:
-            df = pd.read_csv(f, low_memory=False)
-            df = clean_dataframe(df, extra_drop_cols)
-            df = get_benign_data(df)
-            df = df[selected_features] # Use only selected
-            if not df.empty:
-                scaler.partial_fit(df.values)
-        except Exception as e:
-            print(f"Error fitting {f}: {e}")
+        print("Fitting MinMaxScaler incrementally...")
+        for f in tqdm(train_files, desc="Fitting Scaler"):
+            try:
+                df = pd.read_csv(f, low_memory=False)
+                df = clean_dataframe(df, extra_drop_cols)
+                df = get_benign_data(df)
+                df = df[selected_features] # Use only selected
+                if not df.empty:
+                    scaler.partial_fit(df.values)
+            except Exception as e:
+                print(f"Error fitting {f}: {e}")
             
     # Save Scaler and Feature List
     os.makedirs(args.output_dir, exist_ok=True)
