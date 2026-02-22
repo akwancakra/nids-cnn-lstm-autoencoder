@@ -6,6 +6,11 @@ paths:
   results_dir: results
 preprocess:
   drop_columns:
+    - f1
+    - f29
+    - f37
+    - f42
+    - f45
     - Flow ID
     - Timestamp
     - Src IP
@@ -23,13 +28,13 @@ preprocess:
     - Class
     - class
   benign_label: BENIGN
-  scaler: robust
+  scaler: quantile
   scaler_fit_mode: full_benign
   feature_filter:
     enable_nzv: true
     nzv_threshold: 1.0e-06
     enable_corr: true
-    corr_threshold: 0.95
+    corr_threshold: 0.9
     sample_rows_limit: 100000
   scale_guard:
     enable: true

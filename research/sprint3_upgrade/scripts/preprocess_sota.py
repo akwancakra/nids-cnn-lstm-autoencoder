@@ -5,9 +5,28 @@ import argparse
 import pandas as pd
 import numpy as np
 import joblib
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, QuantileTransformer
 from tqdm import tqdm
 import sys
+
+def select_features_by_statistics(sample_df, nzv_threshold=0.01, corr_threshold=0.9):
+    """
+    Perform NZV and Correlation filtering on a sample dataframe.
+    """
+    # 1. NZV
+    variances = sample_df.var()
+    dropped_nzv = variances[variances < nzv_threshold].index.tolist()
+    selected = sample_df.columns.drop(dropped_nzv)
+    
+    # 2. Correlation
+    if len(selected) > 1:
+        corr_matrix = sample_df[selected].corr().abs()
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        dropped_corr = [column for column in upper.columns if any(upper[column] > corr_threshold)]
+        selected = selected.drop(dropped_corr)
+        return selected.tolist(), dropped_nzv, dropped_corr
+    
+    return selected.tolist(), dropped_nzv, []
 
 def clean_dataframe(df, extra_drop_cols=None):
     """
@@ -102,7 +121,7 @@ def create_label_sequences(labels, seq_len, stride):
             sequences.append(0)
     return np.array(sequences)
 
-def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id, extra_drop_cols=None):
+def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_id, extra_drop_cols=None, selected_features=None):
     """
     Process a single dataframe and save as npz shard.
     """
@@ -115,20 +134,26 @@ def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_
         if mode == 'train':
             # For training, we only want Benign
             df = df[df['Label'] == 'BENIGN']
-            # Drop Label
-            df = df.drop(columns=['Label'], errors='ignore')
         else:
             # For testing: 0 = Benign, 1 = Attack
             labels = (df['Label'] != 'BENIGN').astype(int).values
-            df = df.drop(columns=['Label'], errors='ignore')
+        
+        # Drop Label column only after filtering/preserving labels
+        df = df.drop(columns=['Label'], errors='ignore')
     
-    # Ensure only numeric columns
-    df = df.select_dtypes(include=[np.number])
-    
+    # 3. Filter Features (Drop drift + NZV/Corr)
+    if selected_features:
+        # Ensure selected_features exist in df
+        avail = [f for f in selected_features if f in df.columns]
+        df = df[avail]
+    else:
+        # Fallback: Ensure only numeric columns
+        df = df.select_dtypes(include=[np.number])
+
     if df.empty:
         return False
         
-    # 3. Scale
+    # 4. Scale
     try:
         data_scaled = scaler.transform(df.values)
         # CRITICAL: Clip to [0, 1] to handle outliers in Test data
@@ -170,6 +195,7 @@ def main():
     parser.add_argument("--output_dir", type=str, required=True, help="Output directory for processed data")
     parser.add_argument("--seq_len", type=int, default=10, help="Sequence length")
     parser.add_argument("--stride", type=int, default=1, help="Sliding window stride")
+    parser.add_argument("--scaler_type", type=str, default="minmax", help="Scaler type (minmax or quantile)")
     parser.add_argument("--drop_features", type=str, default=None, help="Comma-separated list of features to drop or path to file")
     
     args = parser.parse_args()
@@ -201,40 +227,74 @@ def main():
         print("No training files found! Check path.")
         return
 
-    # 2. Fit Scaler (MinMax 0-1)
-    # Use GlobalScaler logic: Fit on Benign Training Data ONLY
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaler = fit_scaler_incrementally(train_files, scaler, extra_drop_cols)
+    # 2. Fit Scaler & Select Features
+    print("Collecting sample for feature selection...")
+    sample_dfs = []
+    total_samples = 0
+    for f in train_files[:10]: # Use first 10 files as sample
+        df = pd.read_csv(f)
+        df = clean_dataframe(df, extra_drop_cols)
+        df = get_benign_data(df)
+        df = df.select_dtypes(include=[np.number])
+        if not df.empty:
+            sample_dfs.append(df.sample(min(len(df), 10000)))
+            total_samples += len(sample_dfs[-1])
+            if total_samples > 100000: break
     
-    # Save Scaler
+    if not sample_dfs:
+        print("Error: No data found for feature selection")
+        return
+
+    sample_comb = pd.concat(sample_dfs)
+    selected_features, dr_nzv, dr_corr = select_features_by_statistics(sample_comb)
+    print(f"Feature Selection: {len(selected_features)} selected. Dropped {len(dr_nzv)} NZV, {len(dr_corr)} Correlation.")
+    
+    if args.scaler_type == "quantile":
+        scaler = QuantileTransformer(output_distribution="uniform", n_quantiles=1000, random_state=42)
+    else:
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        
+    # Fit scaler on selected features only
+    print("Fitting Scaler on selected features...")
+    for f in tqdm(train_files, desc="Fitting Scaler"):
+        try:
+            df = pd.read_csv(f)
+            df = clean_dataframe(df, extra_drop_cols)
+            df = get_benign_data(df)
+            df = df[selected_features] # Use only selected
+            if not df.empty:
+                scaler.partial_fit(df.values)
+        except Exception as e:
+            print(f"Error fitting {f}: {e}")
+            
+    # Save Scaler and Feature List
     os.makedirs(args.output_dir, exist_ok=True)
-    scaler_path = os.path.join(args.output_dir, "scaler.pkl")
-    joblib.dump(scaler, scaler_path)
-    print(f"Scaler saved to {scaler_path}")
+    joblib.dump(scaler, os.path.join(args.output_dir, "scaler.pkl"))
+    with open(os.path.join(args.output_dir, "selected_features.txt"), 'w') as f:
+        for feat in selected_features:
+            f.write(f"{feat}\n")
+    print(f"Selected features saved to selected_features.txt")
     
     # 3. Process Train Data (Benign Only)
     train_out = os.path.join(args.output_dir, "train")
     os.makedirs(train_out, exist_ok=True)
     
     shard_count = 0
-    for f in tqdm(train_files, desc="Processing Train Data"):
-        try:
-            df = pd.read_csv(f)
-            if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count, extra_drop_cols):
-                shard_count += 1
-        except Exception as e:
-            print(f"Error processing {f}: {e}")
+    for f in tqdm(train_files, desc="Processing Train"):
+        df = pd.read_csv(f)
+        # process_and_save_shard needs to know about selected_features
+        if process_and_save_shard(df, train_out, scaler, args.seq_len, args.stride, 'train', shard_count, extra_drop_cols, selected_features):
+            shard_count += 1
             
     # 4. Process Test Data (Mixed)
     test_out = os.path.join(args.output_dir, "test")
     os.makedirs(test_out, exist_ok=True)
     
     shard_count = 0
-    for f in tqdm(test_files, desc="Processing Test Data (CSE-CIC-IDS2018)"):
+    for f in tqdm(test_files, desc="Processing Test (CSE)"):
         try:
             df = pd.read_csv(f)
-            # Use 'test' mode to preserve Attack labels
-            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols):
+            if process_and_save_shard(df, test_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")
@@ -244,11 +304,10 @@ def main():
     os.makedirs(test_cic_out, exist_ok=True)
     
     shard_count = 0
-    for f in tqdm(train_files, desc="Processing Test Data (CIC-IDS2017)"):
+    for f in tqdm(train_files, desc="Processing Test (CIC)"):
         try:
             df = pd.read_csv(f)
-            # Use 'test' mode to preserve Attack labels from CIC-IDS2017
-            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols):
+            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features):
                 shard_count += 1
         except Exception as e:
             print(f"Error processing {f}: {e}")

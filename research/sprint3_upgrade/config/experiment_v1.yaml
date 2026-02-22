@@ -15,7 +15,7 @@ paths:
 preprocessing:
   sequence_length: 10
   stride: 1
-  scaler_type: "minmax"
+  scaler_type: "quantile"
   clip_values: [0.0, 1.0] # Critical for SOTA performance
 
 model:

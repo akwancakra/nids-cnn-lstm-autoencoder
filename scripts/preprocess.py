@@ -13,7 +13,7 @@ from typing import Iterable, List, Optional, Tuple
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler, QuantileTransformer
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -40,6 +40,8 @@ def get_scaler(name: str):
         return MinMaxScaler()
     if name == "robust":
         return RobustScaler()
+    if name == "quantile":
+        return QuantileTransformer(output_distribution="uniform", n_quantiles=1000, random_state=42)
     raise ValueError(f"Unknown scaler: {name}")
 
 
