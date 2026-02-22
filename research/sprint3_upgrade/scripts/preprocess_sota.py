@@ -229,14 +229,9 @@ def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_
     if selected_features:
         # ENSURE all selected features are present and in the RIGHT ORDER
         # Fill missing with 0 to maintain shape consistency
-        final_cols = []
         for feat in selected_features:
-            if feat in df.columns:
-                final_cols.append(feat)
-            else:
-                # Log or handle missing feature
+            if feat not in df.columns:
                 df[feat] = 0.0
-                final_cols.append(feat)
         df = df[selected_features] # Use exact list for alignment
     else:
         # Fallback: Ensure only numeric columns
@@ -244,6 +239,9 @@ def process_and_save_shard(df, output_dir, scaler, seq_len, stride, mode, shard_
 
     if df.empty:
         return False
+        
+    if shard_id == 0:
+        print(f"Shard 0 characteristic: {df.shape[1]} features selected.")
         
     # 4. Scale
     try:
