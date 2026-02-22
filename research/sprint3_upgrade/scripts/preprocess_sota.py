@@ -111,10 +111,6 @@ def clean_dataframe(df, extra_drop_cols=None, mapper=None):
         for c in extra_drop_cols:
             if c in df.columns:
                 actual_to_drop.append(c)
-            elif re.match(r'^f\d+$', str(c)):
-                idx = int(c[1:])
-                if idx < len(df.columns):
-                    actual_to_drop.append(df.columns[idx])
     
     # Drop columns if they exist (before numeric conversion)
     df = df.drop(columns=list(set(actual_to_drop)), errors='ignore')
@@ -287,6 +283,7 @@ def main():
     parser.add_argument("--stride", type=int, default=1, help="Sliding window stride")
     parser.add_argument("--scaler_type", type=str, default="minmax", help="Scaler type (minmax or quantile)")
     parser.add_argument("--drop_features", type=str, default=None, help="Comma-separated list of features to drop or path to file")
+    parser.add_argument("--raw_test_cic", type=str, default=None, help="Path to CIC-IDS2017 test CSVs (in-domain eval). If not provided, test_cic is skipped.")
     
     args = parser.parse_args()
     
@@ -317,27 +314,33 @@ def main():
 
     train_files = get_files(args.raw_train)
     test_files = get_files(args.raw_test)
+    test_cic_files = get_files(args.raw_test_cic) if args.raw_test_cic else []
     
     print(f"Found {len(train_files)} training files.")
-    print(f"Found {len(test_files)} test files.")
+    print(f"Found {len(test_files)} test files (CSE).")
+    print(f"Found {len(test_cic_files)} test files (CIC in-domain).")
     
     if not train_files:
         print("No training files found! Check path.")
         return
 
     # 2. Fit Scaler & Select Features
+    # Feature selection uses a moderate sample; scaler fitting uses ALL data.
     print("Collecting sample for feature selection...")
     sample_dfs = []
     total_samples = 0
-    # Capture original columns for mapping references later
     master_columns = None
     
-    for f in train_files[:10]: # Use first 10 files as sample
+    for f in train_files[:10]:
         df = pd.read_csv(f, low_memory=False)
         df = clean_dataframe(df, extra_drop_cols)
         if master_columns is None:
             master_columns = df.columns.tolist()
         
+        # Benign-only for feature selection: This is a design decision, not a bug.
+        # Since the autoencoder is trained exclusively on benign traffic, it's methodologically
+        # consistent to perform feature selection (NZV & correlation filtering) on benign data only.
+        # This ensures the feature space reflects the distribution the model will actually learn from.
         df = get_benign_data(df)
         df = df.select_dtypes(include=[np.number])
         if not df.empty:
@@ -354,10 +357,26 @@ def main():
     print(f"Feature Selection: {len(selected_features)} selected. Dropped {len(dr_nzv)} NZV, {len(dr_corr)} Correlation.")
     
     if args.scaler_type == "quantile":
+        print("Collecting full benign data for QuantileTransformer fitting...")
+        scaler_dfs = []
+        scaler_total = 0
+        for f in tqdm(train_files, desc="Collecting Scaler Data"):
+            try:
+                df = pd.read_csv(f, low_memory=False)
+                df = clean_dataframe(df, extra_drop_cols)
+                df = get_benign_data(df)
+                df = df[selected_features]
+                if not df.empty:
+                    scaler_dfs.append(df)
+                    scaler_total += len(df)
+            except Exception as e:
+                print(f"Error reading {f}: {e}")
+        
+        scaler_data = pd.concat(scaler_dfs)
+        print(f"QuantileTransformer fitting on {len(scaler_data)} samples (all benign train data).")
         scaler = QuantileTransformer(output_distribution="uniform", n_quantiles=1000, random_state=42)
-        print("Fitting QuantileTransformer on collected sample (non-incremental)...")
-        # Fit once on the collected sample
-        scaler.fit(sample_comb[selected_features].values)
+        scaler.fit(scaler_data[selected_features].values)
+        del scaler_dfs, scaler_data
     else:
         scaler = MinMaxScaler(feature_range=(0, 1))
         print("Fitting MinMaxScaler incrementally...")
@@ -366,7 +385,7 @@ def main():
                 df = pd.read_csv(f, low_memory=False)
                 df = clean_dataframe(df, extra_drop_cols)
                 df = get_benign_data(df)
-                df = df[selected_features] # Use only selected
+                df = df[selected_features]
                 if not df.empty:
                     scaler.partial_fit(df.values)
             except Exception as e:
@@ -406,18 +425,21 @@ def main():
         except Exception as e:
             print(f"Error processing {f}: {e}")
             
-    # 5. Process CIC-IDS2017 Test Data (Mixed)
-    test_cic_out = os.path.join(args.output_dir, "test_cic")
-    os.makedirs(test_cic_out, exist_ok=True)
-            
-    shard_count = 0
-    for f in tqdm(train_files, desc="Processing Test (CIC)"):
-        try:
-            df = pd.read_csv(f, low_memory=False)
-            if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features, master_columns):
-                shard_count += 1
-        except Exception as e:
-            print(f"Error processing {f}: {e}")
+    # 5. Process CIC-IDS2017 Test Data (In-Domain, separate files)
+    if test_cic_files:
+        test_cic_out = os.path.join(args.output_dir, "test_cic")
+        os.makedirs(test_cic_out, exist_ok=True)
+                
+        shard_count = 0
+        for f in tqdm(test_cic_files, desc="Processing Test (CIC)"):
+            try:
+                df = pd.read_csv(f, low_memory=False)
+                if process_and_save_shard(df, test_cic_out, scaler, args.seq_len, args.stride, 'test', shard_count, extra_drop_cols, selected_features, master_columns):
+                    shard_count += 1
+            except Exception as e:
+                print(f"Error processing {f}: {e}")
+    else:
+        print("Skipping CIC in-domain test: --raw_test_cic not provided.")
     
     print("Preprocessing Complete! Output saved to:", args.output_dir)
 

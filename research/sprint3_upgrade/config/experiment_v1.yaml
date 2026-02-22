@@ -14,13 +14,13 @@ paths:
 
 preprocessing:
   sequence_length: 10
-  stride: 1
+  stride: 5
   scaler_type: "quantile"
-  clip_values: [0.0, 1.0] # Critical for SOTA performance
+  clip_values: [0.0, 1.0]
 
 model:
-  type: "cnn_lstm_ae"
-  input_shape: [10, 77] # Will be auto-detected, but good to have default
+  type: "multiscale_cnn_bilstm_ae"
+  input_shape: [10, 33]
   encoding_dim: 16
   learning_rate: 0.0005
 
@@ -29,6 +29,7 @@ training:
   epochs: 50
   validation_split: 0.1
   patience: 5
+  min_delta: 0.0005
   verbose: 1
 
 thresholding:

@@ -15,12 +15,12 @@ from pathlib import Path
 # For simplicity, we define the model here to match SOTA exactly
 from tensorflow.keras.layers import Input, Conv1D, MaxPooling1D, Concatenate, Bidirectional, LSTM, Dropout, Flatten, Dense, RepeatVector, UpSampling1D
 from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-def build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=16):
+def build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=16, learning_rate=0.0005):
     inputs = Input(shape=input_shape)
     
-    # Encoder
-    # Multi-scale CNN
+    # Encoder — Multi-scale CNN
     conv1 = Conv1D(filters=32, kernel_size=3, activation='relu', padding='same')(inputs)
     conv2 = Conv1D(filters=32, kernel_size=5, activation='relu', padding='same')(inputs)
     conv3 = Conv1D(filters=32, kernel_size=7, activation='relu', padding='same')(inputs)
@@ -38,7 +38,7 @@ def build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=16):
     encoded = Dense(encoding_dim, activation='relu')(flatten)
     
     # Decoder
-    repeat = RepeatVector(input_shape[0] // 2)(encoded) # Adjust for pooling
+    repeat = RepeatVector(input_shape[0] // 2)(encoded)
     
     bilstm2 = Bidirectional(LSTM(64, return_sequences=True))(repeat)
     dropout2 = Dropout(0.2)(bilstm2)
@@ -48,7 +48,7 @@ def build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=16):
     decoded = Conv1D(filters=input_shape[1], kernel_size=3, activation='sigmoid', padding='same')(upsample)
     
     autoencoder = Model(inputs, decoded)
-    autoencoder.compile(optimizer='adam', loss='mse')
+    autoencoder.compile(optimizer=Adam(learning_rate=learning_rate), loss='mse')
     
     return autoencoder
 
@@ -64,7 +64,22 @@ def npz_generator(data_dir):
                         yield X[i], X[i] # AE Target = Input
         except: pass
 
-def create_dataset(data_dir, batch_size=256, shuffle=True, input_shape=(10, 77)):
+def detect_input_shape(data_dir):
+    """Auto-detect (timesteps, features) from the first .npz file."""
+    files = sorted(glob.glob(os.path.join(data_dir, "*.npz")))
+    for f in files:
+        try:
+            with np.load(f, allow_pickle=True) as data:
+                X = data['X'] if 'X' in data else (data['x'] if 'x' in data else None)
+                if X is not None and len(X) > 0:
+                    return tuple(X.shape[1:])
+        except:
+            pass
+    raise ValueError(f"Cannot detect input shape from {data_dir}")
+
+def create_dataset(data_dir, batch_size=256, shuffle=True, input_shape=None):
+    if input_shape is None:
+        input_shape = detect_input_shape(data_dir)
     dataset = tf.data.Dataset.from_generator(
         lambda: npz_generator(data_dir),
         output_signature=(
@@ -134,14 +149,16 @@ def main():
     input_shape = sample[0].shape[1:] # (batch, seq, feat) -> (seq, feat)
     print(f"Detected Input Shape: {input_shape}")
     
-    model = build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=config['model']['encoding_dim'])
+    lr = config['model'].get('learning_rate', 0.0005)
+    model = build_multiscale_cnn_bilstm_ae(input_shape, encoding_dim=config['model']['encoding_dim'], learning_rate=lr)
     model.summary()
     
     # 3. Train
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor='val_loss', 
-            patience=config['training']['patience'], 
+            patience=config['training']['patience'],
+            min_delta=config['training'].get('min_delta', 0.0005),
             restore_best_weights=True,
             verbose=1
         ),

@@ -5,26 +5,31 @@ import argparse
 import pandas as pd
 import numpy as np
 import json
+import re
 from scipy.stats import ks_2samp
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+from preprocess_sota import canonical_key, build_column_mapper
 
 def clean_dataframe(df):
     """
     Same cleaning as preprocess_sota.py to ensure consistent columns.
     """
     df.columns = df.columns.str.strip()
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+
     drop_cols = [
         'Flow ID', 'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
-        'Protocol', 'Timestamp', 'SimillarHTTP', 'Inbound', 'Unnamed: 0'
+        'Protocol', 'Timestamp', 'SimillarHTTP', 'Inbound', 'Unnamed: 0',
+        'Dst Port', 'Src IP', 'Src Port', 'Dst IP'
     ]
     df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
     
     if 'Label' in df.columns:
         df['Label'] = df['Label'].astype(str).str.strip().str.upper()
-        df = df[df['Label'] != 'LABEL'] # Remove header rows
+        df = df[df['Label'] != 'LABEL']
         
-    # Force numeric on all columns except Label
     for col in df.columns:
         if col != 'Label':
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -84,10 +89,14 @@ def main():
         print("Error: Could not load data. Check paths or file contents.")
         return
 
-    # Align columns
+    # Align columns using canonical mapper (handles CIC-2017 vs CSE-2018 naming)
+    mapper = build_column_mapper(df_source.columns.tolist(), df_target.columns.tolist())
+    if mapper:
+        print(f"Column mapper applied: {len(mapper)} target columns renamed to source reference.")
+        df_target = df_target.rename(columns=mapper)
+
     common_cols = [c for c in df_source.columns if c in df_target.columns]
     
-    # Filter only numeric columns that are actually numeric in both
     valid_cols = []
     for c in common_cols:
         if pd.api.types.is_numeric_dtype(df_source[c]) and pd.api.types.is_numeric_dtype(df_target[c]):
