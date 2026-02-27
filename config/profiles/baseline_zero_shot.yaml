@@ -1,4 +1,4 @@
 evaluation:
   mode: zero_shot
-  threshold_method: percentile
+  threshold_method: source_percentile
   few_shot_finetune_epochs: 0

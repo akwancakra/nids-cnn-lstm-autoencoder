@@ -247,15 +247,22 @@ def iter_chunks(
     max_rows: int | None,
     column_mapper: Optional[dict[str, str]] = None,
 ) -> Iterable[pd.DataFrame]:
+    raw_cols = list(pd.read_csv(csv_path, nrows=0, skipinitialspace=True).columns)
+    normalized_to_raw: dict[str, str] = {}
+    for raw in raw_cols:
+        key = str(raw).strip()
+        if key not in normalized_to_raw:
+            normalized_to_raw[key] = raw
+
     raw_usecols = usecols
     rename_map: dict[str, str] = {}
     if column_mapper:
-        raw_cols = load_header_columns(csv_path)
         wanted = set(usecols)
         selected_raw: List[str] = []
         seen_canonical: set[str] = set()
         for raw in raw_cols:
-            canonical = column_mapper.get(raw, raw)
+            raw_clean = str(raw).strip()
+            canonical = column_mapper.get(raw_clean, column_mapper.get(raw, raw_clean))
             if canonical in wanted and canonical not in seen_canonical:
                 selected_raw.append(raw)
                 seen_canonical.add(canonical)
@@ -264,6 +271,16 @@ def iter_chunks(
         missing = wanted - seen_canonical
         if missing:
             raise ValueError(f"Missing expected columns in {csv_path.name}: {sorted(missing)}")
+        raw_usecols = selected_raw
+    else:
+        selected_raw: List[str] = []
+        for wanted_col in usecols:
+            if wanted_col not in normalized_to_raw:
+                raise ValueError(f"Missing expected column '{wanted_col}' in {csv_path.name}")
+            raw_col = normalized_to_raw[wanted_col]
+            selected_raw.append(raw_col)
+            if str(raw_col).strip() != wanted_col:
+                rename_map[raw_col] = wanted_col
         raw_usecols = selected_raw
 
     if chunksize is None:
@@ -494,6 +511,26 @@ def split_files_by_index(n_files: int, test_size: float, val_size: float) -> Tup
     return train_end, val_end
 
 
+def split_files_by_index_with_calib(
+    n_files: int,
+    test_size: float,
+    val_size: float,
+    calib_size: float,
+) -> Tuple[int, int, int]:
+    if n_files <= 0:
+        return 0, 0, 0
+
+    train_end = max(1, int(n_files * (1 - test_size - val_size - calib_size)))
+    train_end = min(train_end, n_files)
+
+    val_end = max(train_end + 1, int(n_files * (1 - test_size - calib_size)))
+    val_end = min(val_end, n_files)
+
+    calib_end = max(val_end + 1, int(n_files * (1 - test_size)))
+    calib_end = min(calib_end, n_files)
+    return train_end, val_end, calib_end
+
+
 def format_duration(seconds: float) -> str:
     sec = max(0, int(seconds))
     h, rem = divmod(sec, 3600)
@@ -593,6 +630,7 @@ def main() -> None:
     stride = int(cfg["preprocess"]["stride"])
     test_size = float(cfg["preprocess"]["test_size"])
     val_size = float(cfg["preprocess"]["val_size"])
+    calib_size = float(cfg["preprocess"].get("calib_size", 0.10))
     sample_frac = cfg["preprocess"]["sample_frac"]
     max_rows_per_file = cfg["preprocess"]["max_rows_per_file"]
     chunksize = cfg["preprocess"]["chunksize"]
@@ -749,16 +787,37 @@ def main() -> None:
 
         train_dir = shard_root / "cic" / "train"
         val_dir = shard_root / "cic" / "val"
+        calib_dir = shard_root / "cic" / "calib"
         test_dir = shard_root / "cic" / "test"
         cse_dir = shard_root / "cse" / "test"
 
         input_shape = (window_size, len(features))
         train_writer = ShardWriter(shard_root, train_dir, "cic_train", shard_size, False, input_shape)
         val_writer = ShardWriter(shard_root, val_dir, "cic_val", shard_size, False, input_shape)
+        calib_writer = ShardWriter(shard_root, calib_dir, "cic_calib", shard_size, True, input_shape)
         test_writer = ShardWriter(shard_root, test_dir, "cic_test", shard_size, True, input_shape)
         cse_writer = ShardWriter(shard_root, cse_dir, "cse_test", shard_size, True, input_shape)
 
-        train_end, val_end = split_files_by_index(len(cic_files), test_size, val_size)
+        train_end, val_end, calib_end = split_files_by_index_with_calib(
+            len(cic_files), test_size, val_size, calib_size
+        )
+        split_files_root = data_processed / "splits"
+        save_json(
+            split_files_root / "cic_train_files.json",
+            {"files": [str(p).replace("\\", "/") for p in cic_files[:train_end]]},
+        )
+        save_json(
+            split_files_root / "cic_val_files.json",
+            {"files": [str(p).replace("\\", "/") for p in cic_files[train_end:val_end]]},
+        )
+        save_json(
+            split_files_root / "cic_calib_files.json",
+            {"files": [str(p).replace("\\", "/") for p in cic_files[val_end:calib_end]]},
+        )
+        save_json(
+            split_files_root / "cic_test_files.json",
+            {"files": [str(p).replace("\\", "/") for p in cic_files[calib_end:]]},
+        )
 
         logging.info("[STAGE] %s", "Windowing CIC-IDS2017 per file (streaming)")
         cic_t0 = time.time()
@@ -792,15 +851,18 @@ def main() -> None:
                     train_writer.add(xw[yw == 0])
                 elif idx < val_end:
                     val_writer.add(xw[yw == 0])
+                elif idx < calib_end:
+                    calib_writer.add(xw, yw)
                 else:
                     test_writer.add(xw, yw)
             elapsed = time.time() - cic_t0
             avg = elapsed / (idx + 1)
             eta = avg * (n_cic - (idx + 1))
             logging.info(
-                "[PROGRESS] CIC accum windows -> train:%d val:%d test:%d | file_time:%s | ETA:%s",
+                "[PROGRESS] CIC accum windows -> train:%d val:%d calib:%d test:%d | file_time:%s | ETA:%s",
                 train_writer.total_samples,
                 val_writer.total_samples,
+                calib_writer.total_samples,
                 test_writer.total_samples,
                 format_duration(time.time() - file_start),
                 format_duration(eta),
@@ -853,17 +915,20 @@ def main() -> None:
 
         train_manifest = train_writer.finalize()
         val_manifest = val_writer.finalize()
+        calib_manifest = calib_writer.finalize()
         test_manifest = test_writer.finalize()
         cse_manifest = cse_writer.finalize()
 
         save_json(train_dir / "manifest.json", train_manifest)
         save_json(val_dir / "manifest.json", val_manifest)
+        save_json(calib_dir / "manifest.json", calib_manifest)
         save_json(test_dir / "manifest.json", test_manifest)
         save_json(cse_dir / "manifest.json", cse_manifest)
 
         logging.info("[DONE] Sharded preprocessing complete.")
         logging.info("[PROGRESS] Train benign windows: %d", train_manifest["total_samples"])
         logging.info("[PROGRESS] Val benign windows: %d", val_manifest["total_samples"])
+        logging.info("[PROGRESS] Calib windows: %d", calib_manifest["total_samples"])
         logging.info("[PROGRESS] Test windows: %d", test_manifest["total_samples"])
         logging.info("[PROGRESS] CSE test windows: %d", cse_manifest["total_samples"])
 

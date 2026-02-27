@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import logging
-import os
 import re
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import math
 import numpy as np
@@ -44,7 +43,7 @@ def build_model(input_shape, cfg):
         x = layers.LSTM(units, return_sequences=(i < len(lstm_units) - 1))(x)
         x = layers.Dropout(dropout)(x)
 
-    x = layers.Dense(latent_dim, activation="relu")(x)
+    x = layers.Dense(latent_dim, activation="relu", name="latent")(x)
 
     x = layers.RepeatVector(input_shape[0])(x)
     for units in reversed(lstm_units):
@@ -96,6 +95,81 @@ def find_latest_periodic_checkpoint(checkpoint_dir: Path) -> tuple[Path | None, 
             latest_path = ckpt
 
     return latest_path, latest_epoch
+
+
+def build_reconstruction_loss(cfg):
+    recon_loss = str(cfg.get("training", {}).get("recon_loss", "mse")).lower()
+    if recon_loss == "mse":
+        return "mse"
+    if recon_loss == "huber":
+        return keras.losses.Huber()
+    if recon_loss == "mse_mae_mix":
+        alpha = float(cfg.get("training", {}).get("mse_mae_alpha", 0.7))
+        if alpha < 0.0 or alpha > 1.0:
+            raise ValueError("training.mse_mae_alpha must be in [0, 1].")
+
+        def mixed_loss(y_true, y_pred):
+            mse = tf.reduce_mean(tf.square(y_true - y_pred), axis=[1, 2])
+            mae = tf.reduce_mean(tf.abs(y_true - y_pred), axis=[1, 2])
+            return alpha * mse + (1.0 - alpha) * mae
+
+        return mixed_loss
+    raise ValueError(f"Unknown training.recon_loss: {recon_loss}")
+
+
+def export_latent_reference_stats(
+    model,
+    out_path: Path,
+    batch_size: int,
+    val_shards: Optional[list[Path]] = None,
+    x_val: Optional[np.ndarray] = None,
+) -> None:
+    if not bool(getattr(model, "layers", None)):
+        return
+    try:
+        latent_layer = model.get_layer("latent")
+    except Exception:
+        logging.warning("[LATENT] Model has no 'latent' layer; skipping latent reference export.")
+        return
+
+    latent_model = keras.Model(inputs=model.input, outputs=latent_layer.output)
+    count = 0
+    sum_vec = None
+    sum_sq = None
+
+    def update_stats(emb: np.ndarray) -> None:
+        nonlocal count, sum_vec, sum_sq
+        if emb.ndim == 1:
+            emb = emb[:, None]
+        elif emb.ndim > 2:
+            emb = emb.reshape(emb.shape[0], -1)
+        if emb.shape[0] == 0:
+            return
+        if sum_vec is None:
+            sum_vec = np.zeros(emb.shape[1], dtype=np.float64)
+            sum_sq = np.zeros(emb.shape[1], dtype=np.float64)
+        sum_vec += np.sum(emb, axis=0)
+        sum_sq += np.sum(np.square(emb), axis=0)
+        count += emb.shape[0]
+
+    if val_shards:
+        for xb in iter_npz_batches(val_shards, batch_size=batch_size, shuffle=False, with_labels=False):
+            emb = latent_model.predict(xb, batch_size=batch_size, verbose=0)
+            update_stats(np.asarray(emb, dtype=np.float32))
+    elif x_val is not None and x_val.shape[0] > 0:
+        emb = latent_model.predict(x_val, batch_size=batch_size, verbose=0)
+        update_stats(np.asarray(emb, dtype=np.float32))
+
+    if count == 0 or sum_vec is None or sum_sq is None:
+        logging.warning("[LATENT] No validation samples found; skipping latent reference export.")
+        return
+
+    mean = (sum_vec / count).astype(np.float32)
+    var = np.maximum(sum_sq / count - np.square(mean), 1e-8)
+    std = np.sqrt(var).astype(np.float32)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out_path, mean=mean, std=std, n_samples=int(count))
+    logging.info("[LATENT] Saved latent reference stats to %s (samples=%d)", out_path, count)
 
 
 def main() -> None:
@@ -240,7 +314,7 @@ def main() -> None:
     optimizer_kwargs = {"learning_rate": lr}
     if clipnorm is not None:
         optimizer_kwargs["clipnorm"] = float(clipnorm)
-    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss="mse")
+    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss=build_reconstruction_loss(cfg))
 
     # Custom callback for periodic checkpoint (every N epochs)
     class PeriodicCheckpoint(keras.callbacks.Callback):
@@ -336,6 +410,25 @@ def main() -> None:
         )
 
     model.save(models_dir / "final_model.keras")
+
+    if bool(cfg.get("training", {}).get("export_latent_reference", False)):
+        latent_out = models_dir / "latent_reference.npz"
+        if use_shards:
+            export_latent_reference_stats(
+                model=model,
+                out_path=latent_out,
+                batch_size=int(cfg["training"]["batch_size"]),
+                val_shards=val_shards,
+                x_val=None,
+            )
+        else:
+            export_latent_reference_stats(
+                model=model,
+                out_path=latent_out,
+                batch_size=int(cfg["training"]["batch_size"]),
+                val_shards=None,
+                x_val=x_val,
+            )
 
     save_json(results_dir / "cnn_lstm_history.json", to_serializable_history(history.history))
     save_json(results_dir / "config_snapshot.json", cfg)

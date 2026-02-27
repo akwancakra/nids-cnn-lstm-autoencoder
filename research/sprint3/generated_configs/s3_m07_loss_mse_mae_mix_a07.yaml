@@ -1,31 +1,30 @@
 runtime:
   colab_mode: false
   drive_root: /content/drive/MyDrive/nids-cnn-lstm-autoencoder
-
 paths:
   data_raw_cic: data/raw/CIC-IDS2017
   data_raw_cse: data/raw/CSE-CIC-IDS2018
-  data_processed: data/processed
-  models_dir: models
-  results_dir: results
+  data_processed: data/research/s3_m07_loss_mse_mae_mix_a07/processed
+  models_dir: models/research/s3_m07_loss_mse_mae_mix_a07
+  results_dir: results/research/s3_m07_loss_mse_mae_mix_a07
 preprocess:
   drop_columns:
-    - Flow ID
-    - Timestamp
-    - Src IP
-    - Source IP
-    - Dst IP
-    - Destination IP
-    - Src Port
-    - Source Port
-    - Dst Port
-    - Destination Port
-    - Protocol
+  - Flow ID
+  - Timestamp
+  - Src IP
+  - Source IP
+  - Dst IP
+  - Destination IP
+  - Src Port
+  - Source Port
+  - Dst Port
+  - Destination Port
+  - Protocol
   label_candidates:
-    - Label
-    - label
-    - Class
-    - class
+  - Label
+  - label
+  - Class
+  - class
   benign_label: BENIGN
   scaler: robust
   scaler_fit_mode: full_benign
@@ -45,14 +44,14 @@ preprocess:
   stride: 1
   test_size: 0.15
   val_size: 0.15
-  calib_size: 0.10
+  calib_size: 0.1
   random_seed: 42
   sample_frac: null
   max_rows_per_file: 300000
   chunksize: 50000
   split_by_file: true
   shard_enable: true
-  shard_dir: data/processed/shards
+  shard_dir: data/research/s3_m07_loss_mse_mae_mix_a07/processed/shards
   shard_size: 20000
   write_combined: false
 training:
@@ -69,19 +68,19 @@ training:
   restore_best_weights: true
   clipnorm: 1.0
   dropout: 0.2
-  recon_loss: mse
+  recon_loss: mse_mae_mix
   mse_mae_alpha: 0.7
   export_latent_reference: false
   cnn_filters:
-    - 64
-    - 128
+  - 64
+  - 128
   cnn_kernel_size: 3
   lstm_units:
-    - 128
-    - 64
+  - 128
+  - 64
   latent_dim: 32
 threshold:
-  percentile: 99
+  percentile: 97
 evaluation:
   batch_size: 256
   sample_size: 200000

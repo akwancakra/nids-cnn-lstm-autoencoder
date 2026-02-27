@@ -1,4 +1,4 @@
-"""Evaluation metrics, confusion matrix, ROC/AUC, FPR, generalization gap."""
+"""Evaluation metrics, thresholding, and plots for CIC/CSE shard pipelines."""
 
 from __future__ import annotations
 
@@ -7,24 +7,23 @@ import logging
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from sklearn import metrics
-import tensorflow as tf
+
+try:
+    import tensorflow as tf
+except ModuleNotFoundError:  # pragma: no cover - allows unit tests without tensorflow
+    tf = None
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.utils import ensure_dir, load_json, load_yaml, save_json, setup_logging
-
-
-def reconstruction_errors(model, x: np.ndarray, batch_size: int = 256) -> np.ndarray:
-    preds = model.predict(x, batch_size=batch_size, verbose=0)
-    errors = np.mean(np.square(x - preds), axis=(1, 2))
-    return errors
 
 
 def format_duration(seconds: float) -> str:
@@ -36,6 +35,115 @@ def format_duration(seconds: float) -> str:
     if m > 0:
         return f"{m}m {s:02d}s"
     return f"{s}s"
+
+
+def compute_reconstruction_scores(
+    x: np.ndarray,
+    preds: np.ndarray,
+    score_mode: str = "recon_mse",
+) -> np.ndarray:
+    mode = str(score_mode).lower()
+    diff = x - preds
+
+    if mode in {"recon_mse", "hybrid_recon_latent"}:
+        return np.mean(np.square(diff), axis=(1, 2)).astype(np.float32)
+
+    if mode == "recon_huber":
+        delta = 1.0
+        abs_diff = np.abs(diff)
+        quadratic = np.minimum(abs_diff, delta)
+        linear = abs_diff - quadratic
+        huber = 0.5 * np.square(quadratic) + (delta * linear)
+        return np.mean(huber, axis=(1, 2)).astype(np.float32)
+
+    raise ValueError(f"Unknown score_mode: {score_mode}")
+
+
+def combine_hybrid_scores(recon_scores: np.ndarray, latent_scores: np.ndarray, alpha: float) -> np.ndarray:
+    if recon_scores.shape != latent_scores.shape:
+        raise ValueError("recon_scores and latent_scores must have the same shape")
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError("alpha must be in [0, 1]")
+    return (alpha * recon_scores + (1.0 - alpha) * latent_scores).astype(np.float32)
+
+
+def flatten_latent(emb: np.ndarray) -> np.ndarray:
+    if emb.ndim == 1:
+        return emb[:, None]
+    if emb.ndim == 2:
+        return emb
+    return emb.reshape(emb.shape[0], -1)
+
+
+def build_latent_model(model):
+    if tf is None:
+        raise ModuleNotFoundError("tensorflow is required for hybrid_recon_latent scoring")
+    try:
+        latent_layer = model.get_layer("latent")
+    except Exception as exc:
+        raise ValueError("Model does not have a layer named 'latent' for hybrid scoring.") from exc
+    return tf.keras.Model(inputs=model.input, outputs=latent_layer.output)
+
+
+def compute_scores_batch(
+    model,
+    xb: np.ndarray,
+    batch_size: int,
+    score_mode: str,
+    latent_model=None,
+    latent_mean: Optional[np.ndarray] = None,
+    latent_std: Optional[np.ndarray] = None,
+    hybrid_alpha: float = 0.7,
+) -> np.ndarray:
+    preds = model.predict(xb, batch_size=batch_size, verbose=0)
+    recon_scores = compute_reconstruction_scores(xb, preds, score_mode=score_mode)
+
+    if str(score_mode).lower() != "hybrid_recon_latent":
+        return recon_scores
+
+    if latent_model is None or latent_mean is None or latent_std is None:
+        raise ValueError("hybrid_recon_latent requires latent_model and latent reference statistics.")
+
+    latent = latent_model.predict(xb, batch_size=batch_size, verbose=0)
+    latent = flatten_latent(np.asarray(latent, dtype=np.float32))
+    z = (latent - latent_mean[None, :]) / latent_std[None, :]
+    latent_scores = np.mean(np.square(z), axis=1).astype(np.float32)
+    return combine_hybrid_scores(recon_scores, latent_scores, alpha=hybrid_alpha)
+
+
+def collect_latent_reference_from_shards(latent_model, shard_files, batch_size: int) -> tuple[np.ndarray, np.ndarray]:
+    count = 0
+    sum_vec = None
+    sum_sq = None
+
+    for shard_path in shard_files:
+        data = np.load(shard_path)
+        x = data["x"]
+        y = data["y"] if "y" in data else None
+        if y is not None:
+            x = x[y == 0]
+        if x.shape[0] == 0:
+            continue
+
+        emb = latent_model.predict(x, batch_size=batch_size, verbose=0)
+        emb = flatten_latent(np.asarray(emb, dtype=np.float32))
+        if emb.shape[0] == 0:
+            continue
+
+        if sum_vec is None:
+            sum_vec = np.zeros(emb.shape[1], dtype=np.float64)
+            sum_sq = np.zeros(emb.shape[1], dtype=np.float64)
+        sum_vec += np.sum(emb, axis=0)
+        sum_sq += np.sum(np.square(emb), axis=0)
+        count += emb.shape[0]
+
+    if count == 0 or sum_vec is None or sum_sq is None:
+        raise ValueError("No benign windows available to compute latent reference statistics.")
+
+    mean = (sum_vec / count).astype(np.float32)
+    var = np.maximum(sum_sq / count - np.square(mean), 1e-8)
+    std = np.sqrt(var).astype(np.float32)
+    return mean, std
 
 
 class ReservoirSampler:
@@ -87,6 +195,137 @@ def compute_metrics_from_counts(tp: int, fp: int, tn: int, fn: int) -> dict:
     }
 
 
+def choose_threshold_from_labeled_scores(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    guardrail_fpr_max: float | None = None,
+) -> float:
+    if scores.size == 0 or labels.size == 0:
+        raise ValueError("scores and labels cannot be empty.")
+    if scores.shape[0] != labels.shape[0]:
+        raise ValueError("scores and labels must have same length.")
+    if len(np.unique(labels)) < 2:
+        raise ValueError("source_calib threshold methods require both benign and attack labels.")
+
+    unique_scores = np.unique(scores.astype(np.float64))
+    candidates = []
+    if unique_scores.size == 1:
+        s = float(unique_scores[0])
+        candidates = [s - 1e-9, s, s + 1e-9]
+    else:
+        mids = (unique_scores[:-1] + unique_scores[1:]) / 2.0
+        candidates = [float(unique_scores[0] - 1e-9)] + [float(v) for v in mids] + [float(unique_scores[-1] + 1e-9)]
+
+    best_thr = candidates[0]
+    best_key = (-1.0, -1.0, -1.0)
+    for thr in candidates:
+        preds = (scores > thr).astype(np.int32)
+        tn, fp, fn, tp = metrics.confusion_matrix(labels, preds, labels=[0, 1]).ravel()
+        met = compute_metrics_from_counts(tp=tp, fp=fp, tn=tn, fn=fn)
+
+        if guardrail_fpr_max is not None and met["fpr"] > guardrail_fpr_max:
+            continue
+
+        # Maximize F1, then recall, then precision.
+        key = (met["f1"], met["recall"], met["precision"])
+        if key > best_key:
+            best_key = key
+            best_thr = thr
+
+    if best_key[0] < 0:
+        # No candidate passed guardrail, fallback to strictest threshold.
+        return float(unique_scores[-1] + 1e-9)
+    return float(best_thr)
+
+
+def compute_threshold_value(
+    method: str,
+    source_errors: np.ndarray,
+    source_labels: np.ndarray | None,
+    target_benign_errors: np.ndarray | None,
+    percentile: float,
+    k_sigma: float,
+    guardrail_fpr_max: float | None = None,
+) -> float:
+    aliases = {
+        "percentile": "source_percentile",
+        "gaussian": "source_gaussian",
+    }
+    method = aliases.get(str(method).lower(), str(method).lower())
+    if source_errors.size == 0:
+        raise ValueError("source_errors cannot be empty")
+
+    if method == "source_percentile":
+        return float(np.percentile(source_errors, percentile))
+    if method == "source_gaussian":
+        return float(np.mean(source_errors) + (k_sigma * np.std(source_errors)))
+    if method == "source_calib_f1":
+        if source_labels is None:
+            raise ValueError("source_calib_f1 requires source_labels.")
+        return choose_threshold_from_labeled_scores(source_errors, source_labels, guardrail_fpr_max=None)
+    if method == "source_calib_guardrail":
+        if source_labels is None:
+            raise ValueError("source_calib_guardrail requires source_labels.")
+        return choose_threshold_from_labeled_scores(
+            source_errors,
+            source_labels,
+            guardrail_fpr_max=float(guardrail_fpr_max) if guardrail_fpr_max is not None else 0.20,
+        )
+
+    # Backward compatibility with old target-based modes.
+    if target_benign_errors is None or target_benign_errors.size == 0:
+        raise ValueError(f"Threshold method '{method}' requires target benign errors.")
+    if method == "target_percentile":
+        return float(np.percentile(target_benign_errors, percentile))
+    if method == "target_gaussian":
+        mu = float(np.mean(target_benign_errors))
+        sigma = float(np.std(target_benign_errors))
+        return mu + (k_sigma * sigma)
+
+    raise ValueError(f"Unknown threshold method: {method}")
+
+
+def collect_scores_from_shards(
+    model,
+    shard_files,
+    batch_size: int,
+    score_mode: str,
+    latent_model=None,
+    latent_mean: Optional[np.ndarray] = None,
+    latent_std: Optional[np.ndarray] = None,
+    hybrid_alpha: float = 0.7,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    all_scores = []
+    all_labels = []
+    has_labels = None
+
+    for shard_path in shard_files:
+        data = np.load(shard_path)
+        x = data["x"]
+        y = data["y"] if "y" in data else None
+        has_labels = y is not None if has_labels is None else has_labels
+        scores = compute_scores_batch(
+            model=model,
+            xb=x,
+            batch_size=batch_size,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
+        all_scores.append(scores)
+        if y is not None:
+            all_labels.append(y.astype(np.int32))
+
+    if not all_scores:
+        raise ValueError("No scores collected from shard files.")
+    score_arr = np.concatenate(all_scores, axis=0).astype(np.float32)
+    if has_labels and all_labels:
+        return score_arr, np.concatenate(all_labels, axis=0).astype(np.int32)
+    return score_arr, None
+
+
 def plot_roc(y_true, scores, out_path: Path):
     if len(np.unique(y_true)) < 2:
         return
@@ -122,118 +361,25 @@ def plot_error_dist(scores_benign, scores_attack, out_path: Path):
     if len(scores_attack) > 0:
         sns.histplot(scores_attack, label="Attack", stat="density", bins=50, color="red", alpha=0.5)
     plt.legend()
-    plt.title("Reconstruction Error Distribution")
+    plt.title("Score Distribution")
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
 
 
-def compute_threshold_from_shards(model, shard_files, percentile, batch_size, sample_size):
-    sampler = ReservoirSampler(sample_size)
-    total = len(shard_files)
-    t0 = time.time()
-    for idx, shard_path in enumerate(shard_files, start=1):
-        data = np.load(shard_path)
-        x = data["x"]
-        errs = reconstruction_errors(model, x, batch_size=batch_size)
-        sampler.update(errs, None)
-        pct = (idx / max(1, total)) * 100.0
-        logging.info("[PROGRESS] threshold shards %d/%d (%.1f%%)", idx, total, pct)
-    errs_sample, _ = sampler.get()
-    if errs_sample.size == 0:
-        raise ValueError("No validation data to compute threshold.")
-    thr = float(np.percentile(errs_sample, percentile))
-    logging.info(
-        "[DONE] Threshold computed | percentile=p%s value=%.8f duration=%s",
-        percentile,
-        thr,
-        format_duration(time.time() - t0),
-    )
-    return thr
-
-
-def collect_error_sample_from_shards(
+def eval_shards(
     model,
     shard_files,
+    threshold: float,
     batch_size: int,
     sample_size: int,
-    benign_only: bool,
-) -> np.ndarray:
-    sampler = ReservoirSampler(sample_size)
-    for shard_path in shard_files:
-        data = np.load(shard_path)
-        x = data["x"]
-        if benign_only:
-            y = data["y"]
-            x = x[y == 0]
-            if x.shape[0] == 0:
-                continue
-        errs = reconstruction_errors(model, x, batch_size=batch_size)
-        sampler.update(errs, None)
-    return sampler.get()[0]
-
-
-def sample_target_benign_windows(
-    shard_files,
-    frac: float,
-    max_samples: int,
-    seed: int,
-) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    collected = []
-    total = 0
-    for shard_path in shard_files:
-        data = np.load(shard_path)
-        x = data["x"]
-        y = data["y"]
-        benign_x = x[y == 0]
-        if benign_x.shape[0] == 0:
-            continue
-        keep = rng.random(benign_x.shape[0]) < frac
-        sampled = benign_x[keep]
-        if sampled.shape[0] == 0:
-            continue
-        if max_samples > 0 and total + sampled.shape[0] > max_samples:
-            sampled = sampled[: max_samples - total]
-        if sampled.shape[0] == 0:
-            break
-        collected.append(sampled)
-        total += sampled.shape[0]
-        if max_samples > 0 and total >= max_samples:
-            break
-    if not collected:
-        return np.empty((0, 0, 0), dtype=np.float32)
-    return np.concatenate(collected, axis=0)
-
-
-def compute_threshold_value(
-    method: str,
-    source_errors: np.ndarray,
-    target_benign_errors: np.ndarray | None,
-    percentile: float,
-    k_sigma: float,
-) -> float:
-    method = method.lower()
-    if source_errors.size == 0:
-        raise ValueError("source_errors cannot be empty")
-
-    if method == "percentile":
-        return float(np.percentile(source_errors, percentile))
-
-    if target_benign_errors is None or target_benign_errors.size == 0:
-        raise ValueError(f"Threshold method '{method}' requires target benign errors.")
-
-    if method == "target_percentile":
-        return float(np.percentile(target_benign_errors, percentile))
-    if method == "target_gaussian":
-        mu = float(np.mean(target_benign_errors))
-        sigma = float(np.std(target_benign_errors))
-        return mu + (k_sigma * sigma)
-
-    raise ValueError(f"Unknown threshold method: {method}")
-
-
-def eval_shards(model, shard_files, threshold, batch_size, sample_size, label: str):
+    label: str,
+    score_mode: str,
+    latent_model=None,
+    latent_mean: Optional[np.ndarray] = None,
+    latent_std: Optional[np.ndarray] = None,
+    hybrid_alpha: float = 0.7,
+):
     tp = fp = tn = fn = 0
     sampler = ReservoirSampler(sample_size)
     sampler_benign = ReservoirSampler(sample_size)
@@ -244,8 +390,17 @@ def eval_shards(model, shard_files, threshold, batch_size, sample_size, label: s
     for idx, shard_path in enumerate(shard_files, start=1):
         data = np.load(shard_path)
         xb = data["x"]
-        yb = data["y"]
-        scores = reconstruction_errors(model, xb, batch_size=batch_size)
+        yb = data["y"].astype(np.int32)
+        scores = compute_scores_batch(
+            model=model,
+            xb=xb,
+            batch_size=batch_size,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
         preds = (scores > threshold).astype(np.int32)
 
         tp += int(np.sum((preds == 1) & (yb == 1)))
@@ -258,6 +413,7 @@ def eval_shards(model, shard_files, threshold, batch_size, sample_size, label: s
             sampler_benign.update(scores[yb == 0], yb[yb == 0])
         if np.any(yb == 1):
             sampler_attack.update(scores[yb == 1], yb[yb == 1])
+
         pct = (idx / max(1, total)) * 100.0
         logging.info("[PROGRESS] %s shards %d/%d (%.1f%%)", label, idx, total, pct)
 
@@ -288,6 +444,9 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=None, help="Manual threshold override")
     args = parser.parse_args()
 
+    if tf is None:
+        raise ModuleNotFoundError("tensorflow is required to run evaluation.")
+
     cfg = load_yaml(args.config)
     setup_logging()
     t0 = time.time()
@@ -305,111 +464,110 @@ def main() -> None:
 
     eval_cfg = cfg.get("evaluation", {})
     eval_batch = int(eval_cfg.get("batch_size", 256))
-    sample_size = int(eval_cfg.get("sample_size", 200000))
+    sample_size = int(eval_cfg.get("sample_size", 0))
     eval_mode = str(eval_cfg.get("mode", "zero_shot")).lower()
-    threshold_method = str(eval_cfg.get("threshold_method", "percentile")).lower()
+    threshold_method = str(eval_cfg.get("threshold_method", "source_percentile")).lower()
     threshold_k_sigma = float(eval_cfg.get("threshold_k_sigma", 2.5))
-    few_shot_frac = float(eval_cfg.get("few_shot_benign_frac", 0.01))
-    few_shot_max_samples = int(eval_cfg.get("few_shot_max_samples", 50000))
-    few_shot_finetune_epochs = int(eval_cfg.get("few_shot_finetune_epochs", 0))
-    few_shot_finetune_lr = float(eval_cfg.get("few_shot_finetune_lr", cfg["training"]["learning_rate"]))
-    few_shot_finetune_batch = int(eval_cfg.get("few_shot_finetune_batch_size", eval_batch))
+    source_calib_split = str(eval_cfg.get("source_calib_split", "calib")).lower()
+    guardrail_fpr_max = float(eval_cfg.get("guardrail_fpr_max", 0.20))
+    score_mode = str(eval_cfg.get("score_mode", "recon_mse")).lower()
+    hybrid_alpha = float(eval_cfg.get("hybrid_alpha", 0.7))
 
-    val_manifest = shard_root / "cic" / "val" / "manifest.json"
+    if eval_mode != "zero_shot":
+        raise ValueError("Sprint 3 policy enforces evaluation.mode=zero_shot.")
+
+    source_manifest = shard_root / "cic" / source_calib_split / "manifest.json"
     cic_manifest = shard_root / "cic" / "test" / "manifest.json"
     cse_manifest = shard_root / "cse" / "test" / "manifest.json"
 
-    if val_manifest.exists() and cic_manifest.exists() and cse_manifest.exists():
-        val_info = load_json(val_manifest)
+    if source_manifest.exists() and cic_manifest.exists() and cse_manifest.exists():
+        source_info = load_json(source_manifest)
         cic_info = load_json(cic_manifest)
         cse_info = load_json(cse_manifest)
 
-        logging.info(
-            "[STAGE] Evaluate shard mode | val_shards=%d cic_shards=%d cse_shards=%d",
-            len(val_info["shards"]),
-            len(cic_info["shards"]),
-            len(cse_info["shards"]),
-        )
-        val_shards = [shard_root / s["path"] for s in val_info["shards"]]
+        source_shards = [shard_root / s["path"] for s in source_info["shards"]]
         cic_shards = [shard_root / s["path"] for s in cic_info["shards"]]
         cse_shards = [shard_root / s["path"] for s in cse_info["shards"]]
 
-        source_errors = collect_error_sample_from_shards(
-            model,
-            val_shards,
-            batch_size=eval_batch,
-            sample_size=sample_size,
-            benign_only=False,
-        )
-        threshold_needs_target = threshold_method in {"target_percentile", "target_gaussian"}
-        target_benign_errors = None
-        should_sample_target_benign = eval_mode == "few_shot" or threshold_needs_target
-        if should_sample_target_benign:
-            adapt_x = sample_target_benign_windows(
-                cse_shards,
-                frac=few_shot_frac,
-                max_samples=few_shot_max_samples,
-                seed=int(cfg["preprocess"]["random_seed"]),
-            )
-            if adapt_x.size == 0:
-                if threshold_needs_target:
-                    raise ValueError(
-                        f"threshold_method={threshold_method} requires target benign windows, "
-                        "but no adaptation windows were sampled."
-                    )
-                if eval_mode == "few_shot":
-                    raise ValueError("few_shot mode enabled, but no benign adaptation windows were sampled.")
-            else:
-                logging.info(
-                    "[PROGRESS] target benign adaptation sample windows: %d (mode=%s method=%s)",
-                    adapt_x.shape[0],
-                    eval_mode,
-                    threshold_method,
-                )
-
-            # Fine-tuning is only applied in explicit few-shot mode.
-            if eval_mode == "few_shot" and few_shot_finetune_epochs > 0:
-                model.compile(
-                    optimizer=tf.keras.optimizers.Adam(learning_rate=few_shot_finetune_lr),
-                    loss="mse",
-                )
-                model.fit(
-                    adapt_x,
-                    adapt_x,
-                    epochs=few_shot_finetune_epochs,
-                    batch_size=few_shot_finetune_batch,
-                    shuffle=True,
-                    verbose=1,
-                )
-
-            if adapt_x.size > 0:
-                target_benign_errors = reconstruction_errors(model, adapt_x, batch_size=eval_batch)
-
-        threshold = compute_threshold_value(
-            method=threshold_method,
-            source_errors=source_errors,
-            target_benign_errors=target_benign_errors,
-            percentile=float(cfg["threshold"]["percentile"]),
-            k_sigma=threshold_k_sigma,
-        )
-        if args.threshold is not None:
-            logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", args.threshold)
-            threshold = args.threshold
-            
         logging.info(
-            "[DONE] Threshold selected | mode=%s method=%s value=%.8f",
-            eval_mode,
+            "[STAGE] Evaluate shard mode | source_split=%s source_shards=%d cic_shards=%d cse_shards=%d",
+            source_calib_split,
+            len(source_shards),
+            len(cic_shards),
+            len(cse_shards),
+        )
+
+        latent_model = None
+        latent_mean = None
+        latent_std = None
+        if score_mode == "hybrid_recon_latent":
+            latent_model = build_latent_model(model)
+            latent_mean, latent_std = collect_latent_reference_from_shards(
+                latent_model=latent_model,
+                shard_files=source_shards,
+                batch_size=eval_batch,
+            )
+            logging.info("[DONE] Latent reference fitted | dims=%d", latent_mean.shape[0])
+
+        source_scores, source_labels = collect_scores_from_shards(
+            model=model,
+            shard_files=source_shards,
+            batch_size=eval_batch,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
+
+        if args.threshold is not None:
+            threshold = float(args.threshold)
+            logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", threshold)
+        else:
+            threshold = compute_threshold_value(
+                method=threshold_method,
+                source_errors=source_scores,
+                source_labels=source_labels,
+                target_benign_errors=None,
+                percentile=float(cfg["threshold"]["percentile"]),
+                k_sigma=threshold_k_sigma,
+                guardrail_fpr_max=guardrail_fpr_max,
+            )
+
+        logging.info(
+            "[DONE] Threshold selected | method=%s value=%.8f source_split=%s",
             threshold_method,
             threshold,
+            source_calib_split,
         )
 
         cic_metrics, cic_sampler, cic_benign, cic_attack = eval_shards(
-            model, cic_shards, threshold, eval_batch, sample_size, label="CIC"
+            model=model,
+            shard_files=cic_shards,
+            threshold=threshold,
+            batch_size=eval_batch,
+            sample_size=sample_size,
+            label="CIC",
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
         )
         save_json(metrics_dir / f"{args.tag}_cic_metrics.json", cic_metrics)
 
         cse_metrics, cse_sampler, cse_benign, cse_attack = eval_shards(
-            model, cse_shards, threshold, eval_batch, sample_size, label="CSE"
+            model=model,
+            shard_files=cse_shards,
+            threshold=threshold,
+            batch_size=eval_batch,
+            sample_size=sample_size,
+            label="CSE",
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
         )
         save_json(metrics_dir / f"{args.tag}_cse_metrics.json", cse_metrics)
 
@@ -418,20 +576,11 @@ def main() -> None:
 
         plot_roc(cic_labels, cic_scores, plots_dir / "roc_cic.png")
         plot_roc(cse_labels, cse_scores, plots_dir / "roc_cse.png")
-
         plot_confusion(cic_labels, (cic_scores > threshold).astype(int), plots_dir / "cm_cic.png")
         plot_confusion(cse_labels, (cse_scores > threshold).astype(int), plots_dir / "cm_cse.png")
-
         plot_error_dist(cic_benign.get()[0], cic_attack.get()[0], plots_dir / "err_dist_cic.png")
         plot_error_dist(cse_benign.get()[0], cse_attack.get()[0], plots_dir / "err_dist_cse.png")
-
     else:
-        if eval_mode == "few_shot":
-            raise ValueError("few_shot mode currently requires shard manifests.")
-        if threshold_method in {"target_percentile", "target_gaussian"}:
-            raise ValueError(
-                f"threshold_method={threshold_method} requires shard manifests to sample target benign windows."
-            )
         val_npz = np.load(data_dir / "cic_val.npz")
         x_val = val_npz["x"].astype(np.float32)
 
@@ -443,14 +592,60 @@ def main() -> None:
         x_cse = cse_test["x"].astype(np.float32)
         y_cse = cse_test["y"].astype(np.int32)
 
+        latent_model = None
+        latent_mean = None
+        latent_std = None
+        if score_mode == "hybrid_recon_latent":
+            latent_model = build_latent_model(model)
+            lat = latent_model.predict(x_val, batch_size=eval_batch, verbose=0)
+            lat = flatten_latent(np.asarray(lat, dtype=np.float32))
+            latent_mean = np.mean(lat, axis=0).astype(np.float32)
+            latent_std = np.maximum(np.std(lat, axis=0).astype(np.float32), 1e-8)
+
+        val_scores = compute_scores_batch(
+            model=model,
+            xb=x_val,
+            batch_size=eval_batch,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
         if args.threshold is not None:
-            threshold = args.threshold
+            threshold = float(args.threshold)
             logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", threshold)
         else:
-            threshold = np.percentile(reconstruction_errors(model, x_val), cfg["threshold"]["percentile"])
+            threshold = compute_threshold_value(
+                method=threshold_method,
+                source_errors=val_scores,
+                source_labels=None,
+                target_benign_errors=None,
+                percentile=float(cfg["threshold"]["percentile"]),
+                k_sigma=threshold_k_sigma,
+                guardrail_fpr_max=guardrail_fpr_max,
+            )
 
-        cic_scores = reconstruction_errors(model, x_cic)
-        cse_scores = reconstruction_errors(model, x_cse)
+        cic_scores = compute_scores_batch(
+            model=model,
+            xb=x_cic,
+            batch_size=eval_batch,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
+        cse_scores = compute_scores_batch(
+            model=model,
+            xb=x_cse,
+            batch_size=eval_batch,
+            score_mode=score_mode,
+            latent_model=latent_model,
+            latent_mean=latent_mean,
+            latent_std=latent_std,
+            hybrid_alpha=hybrid_alpha,
+        )
 
         tn, fp, fn, tp = metrics.confusion_matrix(y_cic, (cic_scores > threshold).astype(int), labels=[0, 1]).ravel()
         cic_metrics = compute_metrics_from_counts(tp, fp, tn, fn)
@@ -468,7 +663,6 @@ def main() -> None:
 
         save_json(metrics_dir / f"{args.tag}_cic_metrics.json", cic_metrics)
         save_json(metrics_dir / f"{args.tag}_cse_metrics.json", cse_metrics)
-
         plot_roc(y_cic, cic_scores, plots_dir / "roc_cic.png")
         plot_roc(y_cse, cse_scores, plots_dir / "roc_cse.png")
         plot_confusion(y_cic, (cic_scores > threshold).astype(int), plots_dir / "cm_cic.png")
@@ -483,6 +677,8 @@ def main() -> None:
         "mode": eval_mode,
         "threshold_method": threshold_method,
         "threshold": float(threshold),
+        "score_mode": score_mode,
+        "source_calib_split": source_calib_split,
     }
     save_json(metrics_dir / f"{args.tag}_generalization_gap.json", generalization_gap)
     logging.info(
@@ -495,17 +691,18 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    physical_devices = tf.config.list_physical_devices("GPU")
-    if len(physical_devices) > 1:
-        try:
-            tf.config.set_visible_devices(physical_devices[0], "GPU")
-            physical_devices = [physical_devices[0]]
-            print("[INFO] Multiple GPU adapters detected. Using only GPU:0 for stability.")
-        except Exception as e:
-            print(f"[WARN] Could not set single visible GPU: {e}")
-    for gpu in physical_devices:
-        try:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        except Exception:
-            pass
+    if tf is not None:
+        physical_devices = tf.config.list_physical_devices("GPU")
+        if len(physical_devices) > 1:
+            try:
+                tf.config.set_visible_devices(physical_devices[0], "GPU")
+                print("[INFO] Multiple GPU adapters detected. Using only GPU:0 for stability.")
+            except Exception as e:
+                print(f"[WARN] Could not set single visible GPU: {e}")
+        for gpu in tf.config.list_physical_devices("GPU"):
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            except Exception:
+                pass
     main()
+

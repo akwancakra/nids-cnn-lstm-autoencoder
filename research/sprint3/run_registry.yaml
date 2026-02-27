@@ -1,0 +1,506 @@
+meta:
+  sprint: CSE_F1_SPRINT3
+  report_title: RESEARCH_REPORT_CSE_F1_SPRINT3
+
+profiles:
+  s3_hybrid_zero_shot:
+    profile_path: config/profiles/hybrid_zero_shot.yaml
+
+runs:
+  # Stage 0: Repro + hardening
+  - run_id: s3_00_repro_best_known
+    stage_name: stage0
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_00_repro_best_known
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        mode: zero_shot
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+        sample_size: 200000
+
+  - run_id: s3_01_strict_eval_full
+    stage_name: stage0
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [eval]
+    tag: s3_01_strict_eval_full
+    reuse_data_from: s3_00_repro_best_known
+    reuse_model_from: s3_00_repro_best_known
+    overrides:
+      threshold:
+        percentile: 97
+      evaluation:
+        mode: zero_shot
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+        sample_size: 0
+
+  # Stage 1: Preprocess ablation
+  - run_id: s3_p01_robust_q995_clip20_corr090
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p01_robust_q995_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        mode: zero_shot
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p02_robust_q997_clip20_corr090
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p02_robust_q997_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.997
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p03_robust_q999_clip10_corr090
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p03_robust_q999_clip10_corr090
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.999
+          post_scale_clip_abs: 10.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p04_quantile_q995_clip20_corr090
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p04_quantile_q995_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: quantile
+        scaler_fit_mode: full_benign
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p05_minmax_q995_clip20_corr090
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p05_minmax_q995_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: minmax
+        scaler_fit_mode: stream_partial
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p06_robust_q995_clip15_corr085
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p06_robust_q995_clip15_corr085
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.85
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 15.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p07_robust_q995_clip20_corr095
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p07_robust_q995_clip20_corr095
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.95
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_p08_robust_q995_clip20_win20_stride2
+    stage_name: stage1
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_p08_robust_q995_clip20_win20_stride2
+    overrides:
+      preprocess:
+        scaler: robust
+        window_size: 20
+        stride: 2
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  # Stage 2: Model / score ablation (uses best Stage 1 preprocess)
+  - run_id: s3_m01_baseline_arch
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m01_baseline_arch
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m02_dropout_030
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m02_dropout_030
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        dropout: 0.3
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m03_latent_64
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m03_latent_64
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        latent_dim: 64
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m04_cnn_64_128_128
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m04_cnn_64_128_128
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        cnn_filters: [64, 128, 128]
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m05_lstm_192_96
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m05_lstm_192_96
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        lstm_units: [192, 96]
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m06_loss_huber
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m06_loss_huber
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        recon_loss: huber
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_huber
+
+  - run_id: s3_m07_loss_mse_mae_mix_a07
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m07_loss_mse_mae_mix_a07
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        recon_loss: mse_mae_mix
+        mse_mae_alpha: 0.7
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: recon_mse
+
+  - run_id: s3_m08_hybrid_score_alpha07
+    stage_name: stage2
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s3_m08_hybrid_score_alpha07
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        export_latent_reference: true
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+        score_mode: hybrid_recon_latent
+        hybrid_alpha: 0.7
+
+  # Stage 3: Source-only threshold sweep (eval only, model fixed from best Stage 2)
+  - run_id: s3_t01_source_percentile_p95
+    stage_name: stage3
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [eval]
+    tag: s3_t01_source_percentile_p95
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      threshold:
+        percentile: 95
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+
+  - run_id: s3_t02_source_percentile_p97
+    stage_name: stage3
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [eval]
+    tag: s3_t02_source_percentile_p97
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+
+  - run_id: s3_t03_source_gaussian_k20
+    stage_name: stage3
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [eval]
+    tag: s3_t03_source_gaussian_k20
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      evaluation:
+        threshold_method: source_gaussian
+        threshold_k_sigma: 2.0
+        source_calib_split: calib
+
+  - run_id: s3_t04_source_calib_f1
+    stage_name: stage3
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [eval]
+    tag: s3_t04_source_calib_f1
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      evaluation:
+        threshold_method: source_calib_f1
+        source_calib_split: calib
+
+  # Stage 4: Seed confirmation
+  - run_id: s3_c01_best_seed42_full
+    stage_name: stage4
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_c01_best_seed42_full
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 42
+
+  - run_id: s3_c02_best_seed1234_full
+    stage_name: stage4
+    active: true
+    profile: s3_hybrid_zero_shot
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s3_c02_best_seed1234_full
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 1234
+

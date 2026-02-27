@@ -6,10 +6,26 @@ from scripts.preprocess import (
     compute_feature_clip_bounds,
     get_scaler,
     select_features_by_statistics,
+    split_files_by_index_with_calib,
 )
+from scripts.utils import detect_label_column
 
 
 class TestPreprocessFeatureSelection(unittest.TestCase):
+    def test_detect_label_column_handles_trimmed_candidates(self):
+        columns = [" Flow Duration", " Label", "Tot Fwd Pkts"]
+        label = detect_label_column(columns, ["Label", "label"])
+        self.assertEqual(label, " Label")
+
+    def test_split_files_by_index_with_calib(self):
+        train_end, val_end, calib_end = split_files_by_index_with_calib(
+            n_files=10,
+            test_size=0.2,
+            val_size=0.2,
+            calib_size=0.1,
+        )
+        self.assertEqual((train_end, val_end, calib_end), (5, 7, 8))
+
     def test_get_scaler_supports_robust(self):
         scaler = get_scaler("robust")
         self.assertEqual(scaler.__class__.__name__, "RobustScaler")

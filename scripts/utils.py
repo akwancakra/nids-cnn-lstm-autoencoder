@@ -29,10 +29,15 @@ def list_csv_files(root: str | Path) -> List[Path]:
 
 
 def detect_label_column(columns: Iterable[str], candidates: List[str]) -> Optional[str]:
-    col_set = {c.lower(): c for c in columns}
+    col_set = {}
+    for c in columns:
+        key = str(c).strip().lower()
+        if key not in col_set:
+            col_set[key] = c
     for cand in candidates:
-        if cand.lower() in col_set:
-            return col_set[cand.lower()]
+        key = str(cand).strip().lower()
+        if key in col_set:
+            return col_set[key]
     return None
 
 
