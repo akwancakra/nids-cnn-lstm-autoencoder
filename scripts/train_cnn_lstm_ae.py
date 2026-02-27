@@ -98,6 +98,19 @@ def find_latest_periodic_checkpoint(checkpoint_dir: Path) -> tuple[Path | None, 
     return latest_path, latest_epoch
 
 
+def resolve_training_loss(cfg: dict) -> str | keras.losses.Loss:
+    training_cfg = cfg.get("training", {})
+    loss_name = str(training_cfg.get("loss_name", "mse")).lower()
+    if loss_name == "mse":
+        return "mse"
+    if loss_name == "huber":
+        delta = float(training_cfg.get("huber_delta", 1.0))
+        if delta <= 0:
+            raise ValueError("training.huber_delta must be > 0")
+        return keras.losses.Huber(delta=delta)
+    raise ValueError(f"Unknown training.loss_name: {loss_name}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.yaml")
@@ -240,7 +253,9 @@ def main() -> None:
     optimizer_kwargs = {"learning_rate": lr}
     if clipnorm is not None:
         optimizer_kwargs["clipnorm"] = float(clipnorm)
-    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss="mse")
+    loss_fn = resolve_training_loss(cfg)
+    model.compile(optimizer=keras.optimizers.Adam(**optimizer_kwargs), loss=loss_fn)
+    logging.info("[STAGE] Compile model | loss=%s", cfg.get("training", {}).get("loss_name", "mse"))
 
     # Custom callback for periodic checkpoint (every N epochs)
     class PeriodicCheckpoint(keras.callbacks.Callback):

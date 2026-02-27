@@ -1,0 +1,212 @@
+meta:
+  sprint: CSE_F1_SPRINT2
+  baseline_id: sp20_rs11_ref_p99p5
+  guardrail_cse_fpr_max: 0.20
+  guardrail_cse_f1_min: 0.24
+  weight_f1_gap: 0.50
+  weight_auc_gap: 0.30
+  weight_accuracy_gap: 0.20
+  selection_objective: cse_f1_under_fpr
+
+experiments:
+  - id: sp20_rs11_ref_p99p5
+    active: true
+    phase: baseline_eval
+    description: Baseline reference from rs11 model with percentile 99.5.
+    pipeline: [eval]
+    tag: sp20_rs11_ref_p99p5
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+
+  - id: sp21_rs11_ft_f001_e1_lr1e4_p995
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 1%, epoch 1, lr 1e-4) with percentile 99.5.
+    pipeline: [eval]
+    tag: sp21_rs11_ft_f001_e1_lr1e4_p995
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: few_shot
+        threshold_method: percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 1
+        few_shot_finetune_lr: 0.0001
+
+  - id: sp22_rs11_ft_f001_e2_lr2e4_p995
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 1%, epoch 2, lr 2e-4) with percentile 99.5.
+    pipeline: [eval]
+    tag: sp22_rs11_ft_f001_e2_lr2e4_p995
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: few_shot
+        threshold_method: percentile
+        few_shot_benign_frac: 0.01
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0002
+
+  - id: sp23_rs11_ft_f002_e2_lr1e4_p995
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 2%, epoch 2, lr 1e-4) with percentile 99.5.
+    pipeline: [eval]
+    tag: sp23_rs11_ft_f002_e2_lr1e4_p995
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: few_shot
+        threshold_method: percentile
+        few_shot_benign_frac: 0.02
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0001
+
+  - id: sp24_rs11_ft_f002_e3_lr2e4_p99
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 2%, epoch 3, lr 2e-4) with percentile 99.0.
+    pipeline: [eval]
+    tag: sp24_rs11_ft_f002_e3_lr2e4_p99
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      threshold:
+        percentile: 99.0
+      evaluation:
+        mode: few_shot
+        threshold_method: percentile
+        few_shot_benign_frac: 0.02
+        few_shot_finetune_epochs: 3
+        few_shot_finetune_lr: 0.0002
+
+  - id: sp25_rs11_ft_f003_e2_lr2e4_tgk18
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 3%, epoch 2, lr 2e-4) with target Gaussian k=1.8.
+    pipeline: [eval]
+    tag: sp25_rs11_ft_f003_e2_lr2e4_tgk18
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      evaluation:
+        mode: few_shot
+        threshold_method: target_gaussian
+        threshold_k_sigma: 1.8
+        few_shot_benign_frac: 0.03
+        few_shot_finetune_epochs: 2
+        few_shot_finetune_lr: 0.0002
+
+  - id: sp26_rs11_ft_f003_e3_lr1e4_tgk20
+    active: true
+    phase: fewshot_eval
+    description: Few-shot finetune from rs11 (frac 3%, epoch 3, lr 1e-4) with target Gaussian k=2.0.
+    pipeline: [eval]
+    tag: sp26_rs11_ft_f003_e3_lr1e4_tgk20
+    model_path: models/research/rs11_full_scaleguard_q995_clip20/cnn_lstm_ae/best_model.keras
+    overrides:
+      paths:
+        data_processed: data/research/rs11_full_scaleguard_q995_clip20/processed
+        models_dir: models/research/rs11_full_scaleguard_q995_clip20
+        results_dir: results/research/sprint2
+      preprocess:
+        shard_dir: data/research/rs11_full_scaleguard_q995_clip20/processed/shards
+      evaluation:
+        mode: few_shot
+        threshold_method: target_gaussian
+        threshold_k_sigma: 2.0
+        few_shot_benign_frac: 0.03
+        few_shot_finetune_epochs: 3
+        few_shot_finetune_lr: 0.0001
+
+  - id: sp30_retrain_w20_huber_q995
+    active: false
+    phase: retrain_candidate
+    description: Full retrain candidate with window_size 20 and Huber loss.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: sp30_retrain_w20_huber_q995
+    overrides:
+      preprocess:
+        window_size: 20
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      training:
+        loss_name: huber
+        huber_delta: 1.0
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile
+
+  - id: sp31_retrain_w30_huber_q995
+    active: false
+    phase: retrain_candidate
+    description: Full retrain candidate with window_size 30 and Huber loss.
+    pipeline: [preprocess, train, eval]
+    isolate_paths: true
+    tag: sp31_retrain_w30_huber_q995
+    overrides:
+      preprocess:
+        window_size: 30
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      training:
+        loss_name: huber
+        huber_delta: 1.0
+      threshold:
+        percentile: 99.5
+      evaluation:
+        mode: zero_shot
+        threshold_method: percentile

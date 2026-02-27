@@ -327,7 +327,9 @@ def summarize(
             "selected_threshold": to_float(gap.get("threshold")),
             "composite_gap_score": None,
             "passes_guardrail": None,
+            "passes_fpr_cap": None,
             "rank_gap_balanced": None,
+            "rank_cse_f1_under_fpr": None,
             "status": status,
             "notes": exp.get("description", ""),
         }
@@ -338,6 +340,7 @@ def summarize(
     w_acc = float(summary_cfg["weight_accuracy_gap"])
     guardrail_cse_fpr_max = float(summary_cfg["guardrail_cse_fpr_max"])
     guardrail_cse_f1_min = float(summary_cfg["guardrail_cse_f1_min"])
+    selection_objective = str(summary_cfg.get("selection_objective", "gap_balanced")).lower()
 
     for row in rows:
         if (
@@ -355,6 +358,7 @@ def summarize(
                 float(row["cse_fpr"]) <= guardrail_cse_fpr_max
                 and float(row["cse_f1"]) >= guardrail_cse_f1_min
             )
+            row["passes_fpr_cap"] = float(row["cse_fpr"]) <= guardrail_cse_fpr_max
 
     ranked_gap = sorted(
         [r for r in rows if r["status"] == "ok" and r["composite_gap_score"] is not None],
@@ -362,6 +366,18 @@ def summarize(
     )
     for idx, row in enumerate(ranked_gap, start=1):
         row["rank_gap_balanced"] = idx
+
+    ranked_cse_f1_under_fpr = sorted(
+        [
+            r
+            for r in rows
+            if r["status"] == "ok" and r["cse_f1"] is not None and bool(r.get("passes_fpr_cap"))
+        ],
+        key=lambda x: float(x["cse_f1"]),
+        reverse=True,
+    )
+    for idx, row in enumerate(ranked_cse_f1_under_fpr, start=1):
+        row["rank_cse_f1_under_fpr"] = idx
 
     summary_csv.parent.mkdir(parents=True, exist_ok=True)
     fields = list(rows[0].keys()) if rows else []
@@ -379,6 +395,7 @@ def summarize(
         return bool(r.get("passes_guardrail"))
 
     best_guardrail = next((r for r in ranked if guardrail_ok(r)), None)
+    best_cse_f1_under_fpr = ranked_cse_f1_under_fpr[0] if ranked_cse_f1_under_fpr else None
     pending_ids = [r["id"] for r in rows if r["status"] != "ok"]
 
     lines: list[str] = []
@@ -445,23 +462,57 @@ def summarize(
         )
     lines.append("")
 
-    lines.append("## Recommendation")
+    lines.append("## Ranking (by CSE F1 under FPR cap)")
     lines.append("")
-    if best_guardrail is None:
+    lines.append("| rank | id | phase | mode | threshold_method | cse_f1 | cse_fpr | f1_gap | auc_gap |")
+    lines.append("| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: |")
+    for r in ranked_cse_f1_under_fpr[:10]:
         lines.append(
-            "- No configuration passes guardrails yet. Run pending experiments first, then reassess."
-        )
-    else:
-        lines.append(
-            "- Current best guardrail-safe candidate: `{}` (score={:.4f}, cse_f1={:.4f}, cse_fpr={:.4f}, f1_gap={:.4f}, auc_gap={:.4f}).".format(
-                best_guardrail["id"],
-                float(best_guardrail["composite_gap_score"]),
-                float(best_guardrail["cse_f1"]),
-                float(best_guardrail["cse_fpr"]),
-                float(best_guardrail["f1_gap"]),
-                float(best_guardrail["auc_gap"]),
+            "| {rank} | {id} | {phase} | {mode} | {threshold_method} | {cse_f1:.4f} | {cse_fpr:.4f} | {f1_gap:.4f} | {auc_gap:.4f} |".format(
+                rank=int(r["rank_cse_f1_under_fpr"]),
+                id=r["id"],
+                phase=r["phase"],
+                mode=r["mode"],
+                threshold_method=r["threshold_method"],
+                cse_f1=float(r["cse_f1"]),
+                cse_fpr=float(r["cse_fpr"]),
+                f1_gap=float(r["f1_gap"]) if r["f1_gap"] is not None else float("nan"),
+                auc_gap=float(r["auc_gap"]) if r["auc_gap"] is not None else float("nan"),
             )
         )
+    lines.append("")
+
+    lines.append("## Recommendation")
+    lines.append("")
+    if selection_objective == "cse_f1_under_fpr":
+        if best_cse_f1_under_fpr is None:
+            lines.append("- No configuration satisfies cse_fpr cap; widen search or adjust cap.")
+        else:
+            lines.append(
+                "- Current best CSE-F1 under FPR cap: `{}` (cse_f1={:.4f}, cse_fpr={:.4f}, f1_gap={:.4f}, auc_gap={:.4f}).".format(
+                    best_cse_f1_under_fpr["id"],
+                    float(best_cse_f1_under_fpr["cse_f1"]),
+                    float(best_cse_f1_under_fpr["cse_fpr"]),
+                    float(best_cse_f1_under_fpr["f1_gap"]),
+                    float(best_cse_f1_under_fpr["auc_gap"]),
+                )
+            )
+    else:
+        if best_guardrail is None:
+            lines.append(
+                "- No configuration passes guardrails yet. Run pending experiments first, then reassess."
+            )
+        else:
+            lines.append(
+                "- Current best guardrail-safe candidate: `{}` (score={:.4f}, cse_f1={:.4f}, cse_fpr={:.4f}, f1_gap={:.4f}, auc_gap={:.4f}).".format(
+                    best_guardrail["id"],
+                    float(best_guardrail["composite_gap_score"]),
+                    float(best_guardrail["cse_f1"]),
+                    float(best_guardrail["cse_fpr"]),
+                    float(best_guardrail["f1_gap"]),
+                    float(best_guardrail["auc_gap"]),
+                )
+            )
     lines.append("")
     lines.append("## Next Steps")
     lines.append("")
@@ -498,6 +549,7 @@ def main() -> None:
     parser.add_argument("--weight-f1-gap", type=float, default=None)
     parser.add_argument("--weight-auc-gap", type=float, default=None)
     parser.add_argument("--weight-accuracy-gap", type=float, default=None)
+    parser.add_argument("--selection-objective", default=None, help="gap_balanced or cse_f1_under_fpr")
     args = parser.parse_args()
 
     root = ROOT
@@ -544,6 +596,9 @@ def main() -> None:
         "weight_accuracy_gap": args.weight_accuracy_gap
         if args.weight_accuracy_gap is not None
         else float(meta.get("weight_accuracy_gap", 0.2)),
+        "selection_objective": args.selection_objective
+        if args.selection_objective is not None
+        else str(meta.get("selection_objective", "gap_balanced")),
     }
 
     selected_ids = parse_run_ids(args.run_ids)
