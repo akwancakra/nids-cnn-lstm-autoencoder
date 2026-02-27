@@ -1,0 +1,11 @@
+evaluation:
+  mode: zero_shot
+  threshold_method: source_percentile
+  source_calib_split: calib
+  score_mode: recon_mse
+  sample_size: 0
+  guardrail_fpr_max: 0.10
+
+training:
+  recon_loss: mse
+  export_latent_reference: false

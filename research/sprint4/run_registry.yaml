@@ -1,0 +1,497 @@
+meta:
+  sprint: CSE_F1_SPRINT4
+  report_title: RESEARCH_REPORT_CSE_F1_SPRINT4
+  base_config_hash: 82aa2c7d68286dd606a184251fc7d5b6a957d2063cac57474ecf2f35ac7d3f0b
+  baseline_history:
+    source: results/**/*_cse_metrics.json paired with *_cic_metrics.json
+    cic_fpr_cap: 0.10
+    best_recall_under_cic_fpr_cap: 0.34416488590844535
+    recall_p50: 0.09882845351952903
+    recall_p90: 0.19711520322725756
+    best_recall_path: results/research/rs10_full_feature_filter_corr090/metrics/swp_rs10_full_feature_filter_corr090_percentile_p97p0_cse_metrics.json
+  gate_rules:
+    adaptive_recall:
+      fixed_floor: 0.40
+      plus_baseline: 0.05
+      framing: conservative_sanity_target
+    cse_precision_min: 0.30
+    cic_fpr_max: 0.10
+    collapse_flag:
+      recall_gte: 0.95
+      precision_lt: 0.20
+  ranking_constraints:
+    hard:
+      cic_fpr_max: 0.10
+      cse_precision_min: 0.30
+    fallback:
+      cic_fpr_max: 0.12
+      cse_precision_min: 0.25
+    sort_order:
+      - cse_recall_desc
+      - cse_f1_desc
+      - cic_fpr_asc
+  retry_policy:
+    infra_retry_free_max: 2
+  stage_validity_rules:
+    stage1: 5
+    stage2: 6
+    stage3: 5
+    stage4: 2
+  promotion_timing: end_of_stage_only
+  pivot_policy:
+    on_gate_fail: USAD
+    execute_in_same_sprint: false
+
+profiles:
+  s4_hybrid_zero_shot_anomaly:
+    profile_path: config/sprint4/profiles/hybrid_zero_shot_anomaly.yaml
+
+runs:
+  # Stage 0
+  - run_id: s4_00_repro_v4_full
+    stage_name: stage0
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_00_repro_v4_full
+    overrides:
+      preprocess:
+        scaler: quantile
+        stride: 5
+      threshold:
+        percentile: 95
+      evaluation:
+        threshold_method: source_percentile
+        score_mode: recon_mse
+
+  - run_id: s4_01_strict_contract_full
+    stage_name: stage0
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_01_strict_contract_full
+    reuse_data_from: s4_00_repro_v4_full
+    reuse_model_from: s4_00_repro_v4_full
+    overrides:
+      threshold:
+        percentile: 95
+      evaluation:
+        threshold_method: source_percentile
+        score_mode: recon_mse
+
+  # Stage 1 (6 runs)
+  - run_id: s4_p01_robust_q995_clip20_corr090
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p01_robust_q995_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+
+  - run_id: s4_p02_robust_q997_clip20_corr090
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p02_robust_q997_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.997
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+
+  - run_id: s4_p03_quantile_q995_clip20_corr090
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p03_quantile_q995_clip20_corr090
+    overrides:
+      preprocess:
+        scaler: quantile
+        scaler_fit_mode: full_benign
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+
+  - run_id: s4_p04_robust_q995_clip15_corr085
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p04_robust_q995_clip15_corr085
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.85
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 15.0
+      threshold:
+        percentile: 97
+
+  - run_id: s4_p05_robust_q995_clip20_corr095
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p05_robust_q995_clip20_corr095
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.95
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+
+  - run_id: s4_p06_robust_q995_clip20_win20_stride2
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_p06_robust_q995_clip20_win20_stride2
+    overrides:
+      preprocess:
+        scaler: robust
+        window_size: 20
+        stride: 2
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      threshold:
+        percentile: 97
+
+  # Stage 2 (8 runs)
+  - run_id: s4_m01_baseline_arch
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m01_baseline_arch
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m02_dropout_030
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m02_dropout_030
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        dropout: 0.3
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m03_latent_64
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m03_latent_64
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        latent_dim: 64
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m04_cnn_64_128_128
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m04_cnn_64_128_128
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        cnn_filters: [64, 128, 128]
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m05_lstm_192_96
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m05_lstm_192_96
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        lstm_units: [192, 96]
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m06_loss_huber
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m06_loss_huber
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        recon_loss: huber
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_huber
+
+  - run_id: s4_m07_loss_mse_mae_mix_a07
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m07_loss_mse_mae_mix_a07
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        recon_loss: mse_mae_mix
+        mse_mae_alpha: 0.7
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: recon_mse
+
+  - run_id: s4_m08_hybrid_score_alpha07
+    stage_name: stage2
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s4_m08_hybrid_score_alpha07
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage1
+    overrides:
+      training:
+        export_latent_reference: true
+      threshold:
+        percentile: 97
+      evaluation:
+        score_mode: hybrid_recon_latent
+        hybrid_alpha: 0.7
+
+  # Stage 3 (6 runs, eval only, model lock enforced by runner)
+  - run_id: s4_t01_source_percentile_p93
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t01_source_percentile_p93
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      threshold:
+        percentile: 93
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+
+  - run_id: s4_t02_source_percentile_p95
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t02_source_percentile_p95
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      threshold:
+        percentile: 95
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+
+  - run_id: s4_t03_source_percentile_p97
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t03_source_percentile_p97
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      threshold:
+        percentile: 97
+      evaluation:
+        threshold_method: source_percentile
+        source_calib_split: calib
+
+  - run_id: s4_t04_source_gaussian_k18
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t04_source_gaussian_k18
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      evaluation:
+        threshold_method: source_gaussian
+        threshold_k_sigma: 1.8
+        source_calib_split: calib
+
+  - run_id: s4_t05_source_calib_f1
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t05_source_calib_f1
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      evaluation:
+        threshold_method: source_calib_f1
+        source_calib_split: calib
+
+  - run_id: s4_t06_source_calib_guardrail_fpr010
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s4_t06_source_calib_guardrail_fpr010
+    template_from_best_stage: stage2
+    reuse_data_from_best_stage: stage1
+    reuse_model_from_best_stage: stage2
+    overrides:
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.10
+        source_calib_split: calib
+
+  # Stage 4 (2 runs, conditional on gate_pass)
+  - run_id: s4_c01_best_seed42_full
+    stage_name: stage4
+    active: true
+    condition: gate_pass
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_c01_best_seed42_full
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 42
+
+  - run_id: s4_c02_best_seed1234_full
+    stage_name: stage4
+    active: true
+    condition: gate_pass
+    profile: s4_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s4_c02_best_seed1234_full
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 1234
