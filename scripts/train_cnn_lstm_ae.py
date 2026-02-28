@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import logging
 import re
@@ -180,6 +181,8 @@ def main() -> None:
     cfg = load_yaml(args.config)
     setup_logging()
     force_cpu = bool(cfg.get("training", {}).get("force_cpu", False))
+    use_multi_gpu = bool(cfg.get("training", {}).get("use_multi_gpu", False))
+    strategy = None
     if force_cpu:
         try:
             tf.config.set_visible_devices([], "GPU")
@@ -188,12 +191,32 @@ def main() -> None:
             logging.warning("Could not force CPU mode cleanly: %s", e)
     else:
         gpus = tf.config.list_physical_devices("GPU")
-        if len(gpus) > 1:
-            try:
-                tf.config.set_visible_devices(gpus[0], "GPU")
-                logging.info("[STAGE] Multiple GPU adapters detected -> using GPU:0 only for stability.")
-            except Exception as e:
-                logging.warning("Could not limit visible GPUs: %s", e)
+        if not gpus:
+            logging.info("[STAGE] No GPU detected -> training will run on CPU.")
+        else:
+            for gpu in gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                except RuntimeError:
+                    pass
+            if len(gpus) > 1 and use_multi_gpu:
+                try:
+                    strategy = tf.distribute.MirroredStrategy()
+                    logging.info("[STAGE] Multiple GPUs detected -> using MirroredStrategy (gpus=%d).", len(gpus))
+                except Exception as e:
+                    logging.warning("Could not init MirroredStrategy, using GPU:0 only: %s", e)
+                    try:
+                        tf.config.set_visible_devices(gpus[0], "GPU")
+                    except Exception:
+                        pass
+            elif len(gpus) > 1:
+                try:
+                    tf.config.set_visible_devices(gpus[0], "GPU")
+                    logging.info("[STAGE] Multiple GPUs detected -> using GPU:0 (set use_multi_gpu=true for all).")
+                except Exception as e:
+                    logging.warning("Could not limit visible GPUs: %s", e)
+            else:
+                logging.info("[STAGE] Using GPU: %s", gpus[0].name)
 
     seed = int(cfg["preprocess"]["random_seed"])
     np.random.seed(seed)
@@ -285,27 +308,29 @@ def main() -> None:
         resume_path = checkpoint_path
         logging.info("[CHECKPOINT] Found existing checkpoint: %s", checkpoint_path)
 
-    if resume_path is not None:
-        try:
-            model = keras.models.load_model(resume_path)
-            logging.info("[CHECKPOINT] Loaded model from checkpoint, resuming training")
+    distribute_scope = strategy.scope() if strategy else contextlib.nullcontext()
+    with distribute_scope:
+        if resume_path is not None:
+            try:
+                model = keras.models.load_model(resume_path)
+                logging.info("[CHECKPOINT] Loaded model from checkpoint, resuming training")
 
-            # History is optional. If present, keep the larger epoch index.
-            if history_path.exists():
-                prev_history = load_json(history_path)
-                if "loss" in prev_history:
-                    hist_epoch = len(prev_history["loss"])
-                    if hist_epoch > initial_epoch:
-                        initial_epoch = hist_epoch
-                    logging.info("[CHECKPOINT] Resuming from epoch %d", initial_epoch)
-        except Exception as e:
-            logging.warning("[CHECKPOINT] Could not load checkpoint, building new model: %s", e)
+                # History is optional. If present, keep the larger epoch index.
+                if history_path.exists():
+                    prev_history = load_json(history_path)
+                    if "loss" in prev_history:
+                        hist_epoch = len(prev_history["loss"])
+                        if hist_epoch > initial_epoch:
+                            initial_epoch = hist_epoch
+                        logging.info("[CHECKPOINT] Resuming from epoch %d", initial_epoch)
+            except Exception as e:
+                logging.warning("[CHECKPOINT] Could not load checkpoint, building new model: %s", e)
+                model = build_model(input_shape, cfg)
+                initial_epoch = 0
+                logging.warning("[CHECKPOINT] Resume disabled due to invalid checkpoint. Training restarts from epoch 0.")
+        else:
+            logging.info("[STAGE] Building new model (no checkpoint found)")
             model = build_model(input_shape, cfg)
-            initial_epoch = 0
-            logging.warning("[CHECKPOINT] Resume disabled due to invalid checkpoint. Training restarts from epoch 0.")
-    else:
-        logging.info("[STAGE] Building new model (no checkpoint found)")
-        model = build_model(input_shape, cfg)
     
     logging.info("[STAGE] Train CNN-LSTM AE | input_shape=%s", input_shape)
 

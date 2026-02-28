@@ -710,17 +710,19 @@ def main() -> None:
 
 if __name__ == "__main__":
     if tf is not None:
-        physical_devices = tf.config.list_physical_devices("GPU")
-        if len(physical_devices) > 1:
-            try:
-                tf.config.set_visible_devices(physical_devices[0], "GPU")
-                print("[INFO] Multiple GPU adapters detected. Using only GPU:0 for stability.")
-            except Exception as e:
-                print(f"[WARN] Could not set single visible GPU: {e}")
-        for gpu in tf.config.list_physical_devices("GPU"):
+        gpus = tf.config.list_physical_devices("GPU")
+        for gpu in gpus:
             try:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            except Exception:
+            except RuntimeError:
                 pass
+        if gpus:
+            print("[STAGE] Using GPU for evaluation (devices=%d)." % len(gpus))
+        if len(gpus) > 1:
+            try:
+                tf.config.set_visible_devices(gpus[0], "GPU")
+                print("[STAGE] Multiple GPUs -> using GPU:0 for eval.")
+            except Exception as e:
+                print("[WARN] Could not limit visible GPUs: %s" % e)
     main()
 

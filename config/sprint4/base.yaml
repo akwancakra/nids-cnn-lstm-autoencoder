@@ -59,6 +59,7 @@ preprocess:
 
 training:
   force_cpu: false
+  use_multi_gpu: true
   batch_size: 512
   epochs: 100
   learning_rate: 0.001

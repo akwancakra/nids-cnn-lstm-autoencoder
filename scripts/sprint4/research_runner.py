@@ -6,6 +6,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -244,25 +245,37 @@ def classify_failure_kind(exc: Exception) -> str:
 
 
 def run_cmd(cmd: list[str], cwd: Path, dry_run: bool) -> float:
-    print("[CMD]", " ".join(cmd))
+    print("[CMD]", " ".join(cmd), flush=True)
     if dry_run:
         return 0.0
 
     t0 = time.time()
-    proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, check=False)
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    lines: list[str] = []
+    for line in proc.stdout or []:
+        lines.append(line)
+        print(line, end="", flush=True)
+    ret = proc.wait()
     dt = time.time() - t0
 
-    if proc.stdout:
-        print(proc.stdout, end="")
-    if proc.stderr:
-        print(proc.stderr, end="", file=sys.stderr)
-
-    if proc.returncode != 0:
+    out_text = "".join(lines)
+    if ret != 0:
         raise CommandExecutionError(
             cmd=cmd,
-            returncode=proc.returncode,
-            stdout=proc.stdout,
-            stderr=proc.stderr,
+            returncode=ret,
+            stdout=out_text,
+            stderr="",
             duration_sec=dt,
         )
     return dt

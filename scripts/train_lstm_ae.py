@@ -83,12 +83,22 @@ def main() -> None:
             logging.warning("Could not force CPU mode cleanly: %s", e)
     else:
         gpus = tf.config.list_physical_devices("GPU")
-        if len(gpus) > 1:
-            try:
-                tf.config.set_visible_devices(gpus[0], "GPU")
-                logging.info("[STAGE] Multiple GPU adapters detected -> using GPU:0 only for stability.")
-            except Exception as e:
-                logging.warning("Could not limit visible GPUs: %s", e)
+        if not gpus:
+            logging.info("[STAGE] No GPU detected -> training will run on CPU.")
+        else:
+            for gpu in gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                except RuntimeError:
+                    pass
+            if len(gpus) > 1:
+                try:
+                    tf.config.set_visible_devices(gpus[0], "GPU")
+                    logging.info("[STAGE] Multiple GPUs detected -> using GPU:0.")
+                except Exception as e:
+                    logging.warning("Could not limit visible GPUs: %s", e)
+            else:
+                logging.info("[STAGE] Using GPU: %s", gpus[0].name)
 
     seed = int(cfg["preprocess"]["random_seed"])
     np.random.seed(seed)
