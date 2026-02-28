@@ -59,7 +59,7 @@ preprocess:
 
 training:
   force_cpu: false
-  batch_size: 128
+  batch_size: 512
   epochs: 100
   learning_rate: 0.001
   early_stopping_patience: 10
@@ -87,7 +87,7 @@ threshold:
   percentile: 97
 
 evaluation:
-  batch_size: 256
+  batch_size: 1024
   sample_size: 0
   mode: zero_shot
   score_mode: recon_mse
