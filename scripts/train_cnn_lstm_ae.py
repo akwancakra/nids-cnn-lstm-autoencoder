@@ -409,6 +409,10 @@ def main() -> None:
         )
         return
 
+    fit_verbose = 2 if not sys.stdout.isatty() else 1
+    if fit_verbose == 2:
+        logging.info("[STAGE] Non-TTY output -> using one-line-per-epoch (verbose=2, no progress bar spam).")
+
     t0 = time.time()
     if use_shards:
         history = model.fit(
@@ -419,7 +423,7 @@ def main() -> None:
             steps_per_epoch=steps_per_epoch,
             validation_steps=val_steps,
             callbacks=callbacks,
-            verbose=1,
+            verbose=fit_verbose,
         )
     else:
         history = model.fit(
@@ -431,7 +435,7 @@ def main() -> None:
             batch_size=int(cfg["training"]["batch_size"]),
             shuffle=True,
             callbacks=callbacks,
-            verbose=1,
+            verbose=fit_verbose,
         )
 
     model.save(models_dir / "final_model.keras")
