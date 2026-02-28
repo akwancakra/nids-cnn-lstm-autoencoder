@@ -1,7 +1,7 @@
 meta:
   sprint: CSE_F1_SPRINT4
   report_title: RESEARCH_REPORT_CSE_F1_SPRINT4
-  base_config_hash: 14036f586d7ec1a72d21e76c827a310217e45f266f1646ea6291c3c3e17d30b5
+  base_config_hash: f806fdf605cf0810bcd88baecacaaef4f11ef3ce2ce97fd20dbc9180d58858fb
   baseline_history:
     source: results/**/*_cse_metrics.json paired with *_cic_metrics.json
     cic_fpr_cap: 0.10
