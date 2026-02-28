@@ -599,9 +599,19 @@ class ShardWriter:
             rel_path = shard_path.relative_to(self.root_dir)
             self.shards.append({"path": str(rel_path).replace("\\", "/"), "samples": int(xb.shape[0])})
             self._idx += 1
+            # Live progress feedback
+            if self._idx % 5 == 0 or self._idx == 1:
+                logging.info(
+                    "[PROGRESS] Writing shards | %s | shards:%d samples:%d",
+                    self.prefix,
+                    self._idx,
+                    self.total_samples,
+                )
 
     def finalize(self) -> dict:
+        logging.info("[PROGRESS] Finalizing shards | %s | flushing buffer...", self.prefix)
         self._flush()
+        logging.info("[DONE] Finalized | %s | total_shards:%d total_samples:%d", self.prefix, len(self.shards), self.total_samples)
         return {
             "total_samples": int(self.total_samples),
             "num_shards": len(self.shards),
@@ -913,11 +923,14 @@ def main() -> None:
             )
         logging.info("[DONE] CSE windowing in %s", format_duration(time.time() - cse_t0))
 
+        logging.info("[STAGE] Finalizing all shards (writing to disk)...")
+        finalize_t0 = time.time()
         train_manifest = train_writer.finalize()
         val_manifest = val_writer.finalize()
         calib_manifest = calib_writer.finalize()
         test_manifest = test_writer.finalize()
         cse_manifest = cse_writer.finalize()
+        logging.info("[DONE] All shards finalized in %s", format_duration(time.time() - finalize_t0))
 
         save_json(train_dir / "manifest.json", train_manifest)
         save_json(val_dir / "manifest.json", val_manifest)

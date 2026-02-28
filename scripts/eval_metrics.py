@@ -116,7 +116,9 @@ def collect_latent_reference_from_shards(latent_model, shard_files, batch_size: 
     sum_vec = None
     sum_sq = None
 
-    for shard_path in shard_files:
+    total = len(shard_files)
+    last_log_pct = 0.0
+    for idx, shard_path in enumerate(shard_files, start=1):
         data = np.load(shard_path)
         x = data["x"]
         y = data["y"] if "y" in data else None
@@ -136,6 +138,11 @@ def collect_latent_reference_from_shards(latent_model, shard_files, batch_size: 
         sum_vec += np.sum(emb, axis=0)
         sum_sq += np.sum(np.square(emb), axis=0)
         count += emb.shape[0]
+
+        pct = (idx / max(1, total)) * 100.0
+        if idx == 1 or idx == total or (pct - last_log_pct >= 5.0):
+            logging.info("[PROGRESS] Computing latent reference | shards:%d/%d (%.1f%%) samples:%d", idx, total, pct, count)
+            last_log_pct = pct
 
     if count == 0 or sum_vec is None or sum_sq is None:
         raise ValueError("No benign windows available to compute latent reference statistics.")
@@ -299,7 +306,9 @@ def collect_scores_from_shards(
     all_labels = []
     has_labels = None
 
-    for shard_path in shard_files:
+    total = len(shard_files)
+    last_log_pct = 0.0
+    for idx, shard_path in enumerate(shard_files, start=1):
         data = np.load(shard_path)
         x = data["x"]
         y = data["y"] if "y" in data else None
@@ -317,6 +326,11 @@ def collect_scores_from_shards(
         all_scores.append(scores)
         if y is not None:
             all_labels.append(y.astype(np.int32))
+
+        pct = (idx / max(1, total)) * 100.0
+        if idx == 1 or idx == total or (pct - last_log_pct >= 5.0):
+            logging.info("[PROGRESS] Collecting scores | shards:%d/%d (%.1f%%)", idx, total, pct)
+            last_log_pct = pct
 
     if not all_scores:
         raise ValueError("No scores collected from shard files.")
@@ -387,6 +401,7 @@ def eval_shards(
 
     t0 = time.time()
     total = len(shard_files)
+    last_log_pct = 0.0
     for idx, shard_path in enumerate(shard_files, start=1):
         data = np.load(shard_path)
         xb = data["x"]
@@ -415,7 +430,10 @@ def eval_shards(
             sampler_attack.update(scores[yb == 1], yb[yb == 1])
 
         pct = (idx / max(1, total)) * 100.0
-        logging.info("[PROGRESS] %s shards %d/%d (%.1f%%)", label, idx, total, pct)
+        # Log every ~2% or at milestones to avoid spam
+        if idx == 1 or idx == total or (pct - last_log_pct >= 2.0):
+            logging.info("[PROGRESS] %s shards %d/%d (%.1f%%)", label, idx, total, pct)
+            last_log_pct = pct
 
     metrics_dict = compute_metrics_from_counts(tp, fp, tn, fn)
 
