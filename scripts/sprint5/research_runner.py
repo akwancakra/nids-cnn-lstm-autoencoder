@@ -597,10 +597,16 @@ def collect_history_pairs(root: Path, cic_fpr_cap: float) -> dict[str, Any]:
     best_guard_path = ""
 
     include_sprints = ["sprint4", "sprint5"]
-    for cse_path in root.joinpath("results").rglob("*_cse_metrics.json"):
-        p = str(cse_path).replace("\\", "/")
-        if not any(f"/results/{s}/" in p for s in include_sprints):
-            continue
+    results_root = root.resolve() / "results"
+    for cse_path in results_root.rglob("*_cse_metrics.json"):
+        cse_resolved = cse_path.resolve()
+        try:
+            if not any(cse_resolved.is_relative_to(results_root / s) for s in include_sprints):
+                continue
+        except (ValueError, AttributeError):
+            p = str(cse_resolved).replace("\\", "/")
+            if not any(f"results/{s}/" in p for s in include_sprints):
+                continue
 
         stem = cse_path.name.replace("_cse_metrics.json", "")
         cic_path = cse_path.with_name(f"{stem}_cic_metrics.json")
