@@ -1,0 +1,26 @@
+{
+  "total_samples": 59999,
+  "num_shards": 4,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/calib/cic_calib_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/calib/cic_calib_0001.npz",
+      "samples": 9999
+    },
+    {
+      "path": "cic/calib/cic_calib_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/calib/cic_calib_0003.npz",
+      "samples": 10000
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+{
+  "total_samples": 699697,
+  "num_shards": 43,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/train/cic_train_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0001.npz",
+      "samples": 6090
+    },
+    {
+      "path": "cic/train/cic_train_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0003.npz",
+      "samples": 7454
+    },
+    {
+      "path": "cic/train/cic_train_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0005.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0006.npz",
+      "samples": 3967
+    },
+    {
+      "path": "cic/train/cic_train_0007.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0008.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0009.npz",
+      "samples": 8854
+    },
+    {
+      "path": "cic/train/cic_train_0010.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0011.npz",
+      "samples": 17182
+    },
+    {
+      "path": "cic/train/cic_train_0012.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0013.npz",
+      "samples": 16357
+    },
+    {
+      "path": "cic/train/cic_train_0014.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0015.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0016.npz",
+      "samples": 9971
+    },
+    {
+      "path": "cic/train/cic_train_0017.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0018.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0019.npz",
+      "samples": 6604
+    },
+    {
+      "path": "cic/train/cic_train_0020.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0021.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0022.npz",
+      "samples": 4656
+    },
+    {
+      "path": "cic/train/cic_train_0023.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0024.npz",
+      "samples": 18571
+    },
+    {
+      "path": "cic/train/cic_train_0025.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0026.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0027.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cic/train/cic_train_0028.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0029.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0030.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/train/cic_train_0031.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0032.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0033.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/train/cic_train_0034.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0035.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0036.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/train/cic_train_0037.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0038.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0039.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/train/cic_train_0040.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0041.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0042.npz",
+      "samples": 10000
+    }
+  ]
+}

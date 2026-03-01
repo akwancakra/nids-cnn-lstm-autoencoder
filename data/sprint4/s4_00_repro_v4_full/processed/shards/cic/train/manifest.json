@@ -1,0 +1,50 @@
+{
+  "total_samples": 139929,
+  "num_shards": 10,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/train/cic_train_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0001.npz",
+      "samples": 9279
+    },
+    {
+      "path": "cic/train/cic_train_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0003.npz",
+      "samples": 4703
+    },
+    {
+      "path": "cic/train/cic_train_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0005.npz",
+      "samples": 5948
+    },
+    {
+      "path": "cic/train/cic_train_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0007.npz",
+      "samples": 9999
+    },
+    {
+      "path": "cic/train/cic_train_0008.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/train/cic_train_0009.npz",
+      "samples": 10000
+    }
+  ]
+}

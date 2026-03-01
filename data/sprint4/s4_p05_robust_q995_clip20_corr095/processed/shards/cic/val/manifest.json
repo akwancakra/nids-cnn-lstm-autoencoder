@@ -1,0 +1,122 @@
+{
+  "total_samples": 442876,
+  "num_shards": 28,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/val/cic_val_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0001.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0002.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cic/val/cic_val_0003.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0005.npz",
+      "samples": 9823
+    },
+    {
+      "path": "cic/val/cic_val_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0007.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0008.npz",
+      "samples": 9940
+    },
+    {
+      "path": "cic/val/cic_val_0009.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0010.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0011.npz",
+      "samples": 9920
+    },
+    {
+      "path": "cic/val/cic_val_0012.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0013.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0014.npz",
+      "samples": 9960
+    },
+    {
+      "path": "cic/val/cic_val_0015.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0016.npz",
+      "samples": 18602
+    },
+    {
+      "path": "cic/val/cic_val_0017.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0018.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0019.npz",
+      "samples": 2212
+    },
+    {
+      "path": "cic/val/cic_val_0020.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0021.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0022.npz",
+      "samples": 2062
+    },
+    {
+      "path": "cic/val/cic_val_0023.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0024.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0025.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cic/val/cic_val_0026.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0027.npz",
+      "samples": 366
+    }
+  ]
+}

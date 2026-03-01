@@ -1,0 +1,8 @@
+{
+  "files": [
+    "data/raw/CIC-IDS2017/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+    "data/raw/CIC-IDS2017/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv",
+    "data/raw/CIC-IDS2017/Friday-WorkingHours-Morning.pcap_ISCX.csv",
+    "data/raw/CIC-IDS2017/Monday-WorkingHours.pcap_ISCX.csv"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "total_samples": 149991,
+  "num_shards": 12,
+  "input_shape": [
+    20,
+    31
+  ],
+  "shards": [
+    {
+      "path": "cic/test/cic_test_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0001.npz",
+      "samples": 4991
+    },
+    {
+      "path": "cic/test/cic_test_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0003.npz",
+      "samples": 5000
+    },
+    {
+      "path": "cic/test/cic_test_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0005.npz",
+      "samples": 5000
+    },
+    {
+      "path": "cic/test/cic_test_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0007.npz",
+      "samples": 5000
+    },
+    {
+      "path": "cic/test/cic_test_0008.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0009.npz",
+      "samples": 5000
+    },
+    {
+      "path": "cic/test/cic_test_0010.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0011.npz",
+      "samples": 5000
+    }
+  ]
+}

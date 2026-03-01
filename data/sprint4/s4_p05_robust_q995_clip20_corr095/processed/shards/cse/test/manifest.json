@@ -1,0 +1,226 @@
+{
+  "total_samples": 899973,
+  "num_shards": 54,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cse/test/cse_test_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0001.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0002.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0003.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0005.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0006.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0007.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0008.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0009.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0010.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0011.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0012.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0013.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0014.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0015.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0016.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0017.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0018.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0019.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0020.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0021.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0022.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0023.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0024.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0025.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0026.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0027.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0028.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0029.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0030.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0031.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0032.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0033.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0034.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0035.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0036.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0037.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0038.npz",
+      "samples": 9991
+    },
+    {
+      "path": "cse/test/cse_test_0039.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0040.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0041.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0042.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0043.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0044.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0045.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0046.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0047.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0048.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0049.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0050.npz",
+      "samples": 10000
+    },
+    {
+      "path": "cse/test/cse_test_0051.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0052.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cse/test/cse_test_0053.npz",
+      "samples": 10000
+    }
+  ]
+}

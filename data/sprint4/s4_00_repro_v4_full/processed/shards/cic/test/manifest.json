@@ -1,0 +1,26 @@
+{
+  "total_samples": 59999,
+  "num_shards": 4,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/test/cic_test_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0001.npz",
+      "samples": 9999
+    },
+    {
+      "path": "cic/test/cic_test_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/test/cic_test_0003.npz",
+      "samples": 10000
+    }
+  ]
+}

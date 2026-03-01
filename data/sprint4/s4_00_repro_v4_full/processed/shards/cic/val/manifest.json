@@ -1,0 +1,38 @@
+{
+  "total_samples": 88556,
+  "num_shards": 7,
+  "input_shape": [
+    10,
+    38
+  ],
+  "shards": [
+    {
+      "path": "cic/val/cic_val_0000.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0001.npz",
+      "samples": 9951
+    },
+    {
+      "path": "cic/val/cic_val_0002.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0003.npz",
+      "samples": 7697
+    },
+    {
+      "path": "cic/val/cic_val_0004.npz",
+      "samples": 20000
+    },
+    {
+      "path": "cic/val/cic_val_0005.npz",
+      "samples": 6834
+    },
+    {
+      "path": "cic/val/cic_val_0006.npz",
+      "samples": 4074
+    }
+  ]
+}
