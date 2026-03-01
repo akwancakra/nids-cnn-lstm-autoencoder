@@ -1,7 +1,7 @@
 meta:
   sprint: CSE_F1_SPRINT5
   report_title: RESEARCH_REPORT_CSE_F1_SPRINT5
-  base_config_hash: b095223ef6403efcbe386f689cc36bdcc309608514e56207e2ffc09527950f90
+  base_config_hash: d34ad4d8057193b8782b44a494664b0a79a2d5c1c1db341a26b421b2274d6533
   baseline_history:
     source: results/**/*_cse_metrics.json paired with *_cic_metrics.json
     include_sprints: [sprint4, sprint5]
