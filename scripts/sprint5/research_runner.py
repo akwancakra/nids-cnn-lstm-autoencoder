@@ -597,39 +597,34 @@ def collect_history_pairs(root: Path, cic_fpr_cap: float) -> dict[str, Any]:
     best_guard_path = ""
 
     include_sprints = ["sprint4", "sprint5"]
-    results_root = root.resolve() / "results"
-    for cse_path in results_root.rglob("*_cse_metrics.json"):
-        cse_resolved = cse_path.resolve()
-        try:
-            if not any(cse_resolved.is_relative_to(results_root / s) for s in include_sprints):
+    results_root = (root / "results").resolve()
+    for sprint in include_sprints:
+        sprint_dir = results_root / sprint
+        if not sprint_dir.exists():
+            continue
+        for cse_path in sprint_dir.rglob("*_cse_metrics.json"):
+            stem = cse_path.name.replace("_cse_metrics.json", "")
+            cic_path = cse_path.with_name(f"{stem}_cic_metrics.json")
+            if not cic_path.exists():
                 continue
-        except (ValueError, AttributeError):
-            p = str(cse_resolved).replace("\\", "/")
-            if not any(f"results/{s}/" in p for s in include_sprints):
+
+            try:
+                cse = load_json(cse_path)
+                cic = load_json(cic_path)
+            except Exception:
                 continue
 
-        stem = cse_path.name.replace("_cse_metrics.json", "")
-        cic_path = cse_path.with_name(f"{stem}_cic_metrics.json")
-        if not cic_path.exists():
-            continue
+            cse_rec = to_float(cse.get("recall"))
+            cic_fpr_val = to_float(cic.get("fpr"))
+            if cse_rec is None or cic_fpr_val is None:
+                continue
 
-        try:
-            cse = load_json(cse_path)
-            cic = load_json(cic_path)
-        except Exception:
-            continue
-
-        cse_rec = to_float(cse.get("recall"))
-        cic_fpr = to_float(cic.get("fpr"))
-        if cse_rec is None or cic_fpr is None:
-            continue
-
-        recalls_all.append(cse_rec)
-        if cic_fpr <= cic_fpr_cap:
-            recalls_guard.append(cse_rec)
-            if cse_rec > best_guard_recall:
-                best_guard_recall = cse_rec
-                best_guard_path = str(cse_path).replace("\\", "/")
+            recalls_all.append(cse_rec)
+            if cic_fpr_val <= cic_fpr_cap:
+                recalls_guard.append(cse_rec)
+                if cse_rec > best_guard_recall:
+                    best_guard_recall = cse_rec
+                    best_guard_path = str(cse_path).replace("\\", "/")
 
     def percentile(vals: list[float], q: float) -> float | None:
         if not vals:
@@ -659,7 +654,7 @@ def _assert_history_populated(root: Path, history_summary: dict[str, Any]) -> No
     count_guard = history_summary.get("count_under_guardrail", 0) or 0
     if count_all > 0 or count_guard > 0:
         return
-    results_root = root / "results"
+    results_root = (root / "results").resolve()
     for sprint in ("sprint4", "sprint5"):
         sprint_dir = results_root / sprint
         if not sprint_dir.exists():
