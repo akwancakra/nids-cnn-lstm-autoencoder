@@ -166,6 +166,36 @@ def apply_data_reuse_inputs(cfg: dict[str, Any], source_run_id: str) -> dict[str
     return out
 
 
+def resolve_data_origin(runs: list[dict[str, Any]], run_id: str, max_depth: int = 10) -> str:
+    """Follow reuse_data_from chain to find the run that actually produced preprocessed data.
+
+    When a run uses reuse_data_from_best_stage and the selected best run itself
+    did not run preprocessing (e.g. it has stages=[train, eval] and reuses data
+    from another run), this function follows the chain to find the true data origin.
+    """
+    visited: set[str] = set()
+    current = run_id
+    for _ in range(max_depth):
+        if current in visited:
+            raise ValueError(f"Circular reuse_data_from chain detected at run_id='{current}'")
+        visited.add(current)
+        spec = next((r for r in runs if r["run_id"] == current), None)
+        if spec is None:
+            raise ValueError(f"run_id='{current}' not found in run registry during data origin resolution")
+        stages = spec.get("stages", [])
+        if isinstance(stages, str):
+            stages = [s.strip() for s in stages.split(",")]
+        if "preprocess" in stages:
+            return current
+        upstream = spec.get("reuse_data_from")
+        if not upstream:
+            return current
+        current = str(upstream)
+    raise ValueError(
+        f"reuse_data_from chain exceeded max_depth={max_depth} starting from run_id='{run_id}'"
+    )
+
+
 def default_model_path_from_cfg(cfg: dict[str, Any], model_variant: str) -> str:
     model_dir = Path(cfg["paths"]["models_dir"]) / model_subdir(model_variant)
     return str(model_dir / "best_model.keras").replace("\\", "/")
@@ -878,7 +908,8 @@ def materialize_run_config(
 
     reuse_data_from = run_spec.get("reuse_data_from")
     if reuse_data_from:
-        cfg = apply_data_reuse_inputs(cfg, str(reuse_data_from))
+        reuse_data_from = resolve_data_origin(runs, str(reuse_data_from))
+        cfg = apply_data_reuse_inputs(cfg, reuse_data_from)
 
     reuse_data_stage = run_spec.get("reuse_data_from_best_stage")
     if reuse_data_stage:
@@ -893,6 +924,7 @@ def materialize_run_config(
             rank=rank,
         )
         if source_run_id:
+            source_run_id = resolve_data_origin(runs, source_run_id)
             cfg = apply_data_reuse_inputs(cfg, source_run_id)
         elif not allow_unresolved_dynamic:
             raise ValueError(

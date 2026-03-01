@@ -88,7 +88,7 @@ threshold:
 
 evaluation:
   batch_size: 1024
-  sample_size: 0
+  sample_size: 200000
   mode: zero_shot
   score_mode: recon_mse
   hybrid_alpha: 0.7

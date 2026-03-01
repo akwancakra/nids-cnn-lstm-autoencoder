@@ -440,8 +440,10 @@ def eval_shards(
     sample_scores, sample_labels = sampler.get()
     if len(np.unique(sample_labels)) >= 2:
         metrics_dict["roc_auc"] = float(metrics.roc_auc_score(sample_labels, sample_scores))
+        metrics_dict["pr_auc"] = float(metrics.average_precision_score(sample_labels, sample_scores))
     else:
         metrics_dict["roc_auc"] = None
+        metrics_dict["pr_auc"] = None
 
     logging.info(
         "[DONE] %s eval complete | f1=%.4f fpr=%.4f roc_auc=%s duration=%s",
@@ -697,12 +699,16 @@ def main() -> None:
 
         try:
             cic_metrics["roc_auc"] = float(metrics.roc_auc_score(y_cic, cic_scores))
+            cic_metrics["pr_auc"] = float(metrics.average_precision_score(y_cic, cic_scores))
         except Exception:
             cic_metrics["roc_auc"] = None
+            cic_metrics["pr_auc"] = None
         try:
             cse_metrics["roc_auc"] = float(metrics.roc_auc_score(y_cse, cse_scores))
+            cse_metrics["pr_auc"] = float(metrics.average_precision_score(y_cse, cse_scores))
         except Exception:
             cse_metrics["roc_auc"] = None
+            cse_metrics["pr_auc"] = None
 
         save_json(metrics_dir / f"{args.tag}_cic_metrics.json", cic_metrics)
         save_json(metrics_dir / f"{args.tag}_cse_metrics.json", cse_metrics)
@@ -716,6 +722,7 @@ def main() -> None:
     generalization_gap = {
         "f1_gap": cic_metrics["f1"] - cse_metrics["f1"],
         "auc_gap": (cic_metrics.get("roc_auc") or 0) - (cse_metrics.get("roc_auc") or 0),
+        "pr_auc_gap": (cic_metrics.get("pr_auc") or 0) - (cse_metrics.get("pr_auc") or 0),
         "accuracy_gap": cic_metrics["accuracy"] - cse_metrics["accuracy"],
         "mode": eval_mode,
         "threshold_method": threshold_method,
