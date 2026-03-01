@@ -648,19 +648,31 @@ def collect_history_pairs(root: Path, cic_fpr_cap: float) -> dict[str, Any]:
 
 
 def _assert_history_populated(root: Path, history_summary: dict[str, Any]) -> None:
-    """Fail early if metrics exist but history is empty (indicates include logic bug)."""
+    """Fail early if we have complete metric pairs on disk but history is empty (include/parse bug)."""
     count_all = history_summary.get("count_all", 0) or 0
     count_guard = history_summary.get("count_under_guardrail", 0) or 0
+    if count_all > 0 or count_guard > 0:
+        return
     results_root = root / "results"
     for sprint in ("sprint4", "sprint5"):
         sprint_dir = results_root / sprint
-        if sprint_dir.exists():
-            cse_files = list(sprint_dir.rglob("*_cse_metrics.json"))
-            if cse_files and count_all == 0 and count_guard == 0:
+        if not sprint_dir.exists():
+            continue
+        for cse_path in sprint_dir.rglob("*_cse_metrics.json"):
+            stem = cse_path.name.replace("_cse_metrics.json", "")
+            cic_path = cse_path.with_name(f"{stem}_cic_metrics.json")
+            if not cic_path.exists():
+                continue
+            try:
+                cse = load_json(cse_path)
+                cic = load_json(cic_path)
+            except Exception:
+                continue
+            if to_float(cse.get("recall")) is not None and to_float(cic.get("fpr")) is not None:
                 raise RuntimeError(
-                    f"[BUG] Found {len(cse_files)} *_cse_metrics.json under results/{sprint}/ "
+                    f"[BUG] Found valid pair under results/{sprint}/: {cse_path.name} + {cic_path.name} "
                     "but history count_all=0, count_under_guardrail=0. "
-                    "Check collect_history_pairs include logic."
+                    "Check collect_history_pairs include logic or path normalization."
                 )
     return None
 
