@@ -1,0 +1,290 @@
+meta:
+  sprint: CSE_F1_SPRINT5
+  report_title: RESEARCH_REPORT_CSE_F1_SPRINT5
+  base_config_hash: b095223ef6403efcbe386f689cc36bdcc309608514e56207e2ffc09527950f90
+  baseline_history:
+    source: results/**/*_cse_metrics.json paired with *_cic_metrics.json
+    include_sprints: [sprint4, sprint5]
+    cic_fpr_cap: 0.10
+  gate_rules:
+    adaptive_recall:
+      fixed_floor: 0.75
+      plus_baseline: 0.00
+      framing: conservative_sanity_target
+    cse_precision_min: 0.30
+    cic_fpr_max: 0.10
+    collapse_flag:
+      recall_gte: 0.95
+      precision_lt: 0.20
+  pivot_policy:
+    on_gate_fail: USAD
+    execute_in_same_sprint: false
+  ranking_constraints:
+    hard:
+      cic_fpr_max: 0.10
+      cse_precision_min: 0.30
+    sort_order:
+      - cse_recall_desc
+      - cse_f1_desc
+      - cic_fpr_asc
+  retry_policy:
+    infra_retry_free_max: 2
+  stage_validity_rules:
+    stage1: 7
+    stage2: 0
+    stage3: 2
+    stage4: 2
+  promotion_timing: end_of_stage_only
+
+profiles:
+  s5_hybrid_zero_shot_anomaly:
+    profile_path: config/sprint5/profiles/hybrid_zero_shot_anomaly.yaml
+
+runs:
+  # Stage 0: Lock baseline + s4_m07 rerun
+  - run_id: s5_00_lock_baseline
+    stage_name: stage0
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s5_00_lock_baseline
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.10
+        source_calib_split: calib
+      threshold:
+        percentile: 97
+
+  - run_id: s5_m07_rerun
+    stage_name: stage0
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [train, eval]
+    tag: s5_m07_rerun
+    reuse_data_from: s5_00_lock_baseline
+    overrides:
+      preprocess:
+        scaler: robust
+        feature_filter:
+          enable_nzv: true
+          enable_corr: true
+          corr_threshold: 0.90
+        scale_guard:
+          enable: true
+          raw_clip_quantile: 0.995
+          post_scale_clip_abs: 20.0
+      training:
+        recon_loss: mse_mae_mix
+        mse_mae_alpha: 0.7
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.10
+        source_calib_split: calib
+        score_mode: recon_mse
+      threshold:
+        percentile: 97
+
+  # Stage 1: Target threshold (7 runs) - Oracle + Semi-blind + Baseline kontrol
+  - run_id: s5_t01_target_p95
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t01_target_p95
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+      threshold:
+        percentile: 95
+
+  - run_id: s5_t02_target_p97
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t02_target_p97
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+      threshold:
+        percentile: 97
+
+  - run_id: s5_t03_target_p98
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t03_target_p98
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+      threshold:
+        percentile: 98
+
+  - run_id: s5_t04_target_p99
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t04_target_p99
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+      threshold:
+        percentile: 99
+
+  - run_id: s5_t05_target_p97_sub5pct
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t05_target_p97_sub5pct
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+        target_benign_sample_frac: 0.05
+      threshold:
+        percentile: 97
+
+  - run_id: s5_t06_target_p97_sub10pct
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t06_target_p97_sub10pct
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: target_percentile
+        target_benign_sample_frac: 0.10
+      threshold:
+        percentile: 97
+
+  - run_id: s5_t07_source_calib_guardrail
+    stage_name: stage1
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_t07_source_calib_guardrail
+    template_from_best_stage: stage0
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.10
+        source_calib_split: calib
+      threshold:
+        percentile: 97
+
+  # Stage 3: CIC guardrail relaxation (2 runs) - gate computed from stage3
+  - run_id: s5_h01_guardrail_fpr012
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_h01_guardrail_fpr012
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.12
+        source_calib_split: calib
+      threshold:
+        percentile: 97
+
+  - run_id: s5_h02_guardrail_fpr015
+    stage_name: stage3
+    active: true
+    condition: always
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [eval]
+    tag: s5_h02_guardrail_fpr015
+    template_from_best_stage: stage1
+    reuse_data_from_best_stage: stage0
+    reuse_model_from: s5_00_lock_baseline
+    overrides:
+      evaluation:
+        threshold_method: source_calib_guardrail
+        guardrail_fpr_max: 0.15
+        source_calib_split: calib
+      threshold:
+        percentile: 97
+
+  # Stage 4: Seed confirmation (2 runs, conditional on gate_pass)
+  - run_id: s5_c01_seed42
+    stage_name: stage4
+    active: true
+    condition: gate_pass
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s5_c01_seed42
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 42
+
+  - run_id: s5_c02_seed1234
+    stage_name: stage4
+    active: true
+    condition: gate_pass
+    profile: s5_hybrid_zero_shot_anomaly
+    model_variant: hybrid
+    stages: [preprocess, train, eval]
+    tag: s5_c02_seed1234
+    template_from_best_stage: stage3
+    overrides:
+      preprocess:
+        random_seed: 1234

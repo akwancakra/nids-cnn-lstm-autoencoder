@@ -1,0 +1,101 @@
+runtime:
+  colab_mode: true
+  drive_root: /content/drive/MyDrive/nids-cnn-lstm-autoencoder
+paths:
+  data_raw_cic: data/raw/CIC-IDS2017
+  data_raw_cse: data/raw/CSE-CIC-IDS2018
+  data_processed: data/sprint5/s5_t04_target_p99/processed
+  models_dir: models/sprint5/s5_t04_target_p99
+  results_dir: results/sprint5/s5_t04_target_p99
+preprocess:
+  drop_columns:
+  - Flow ID
+  - Timestamp
+  - Src IP
+  - Source IP
+  - Dst IP
+  - Destination IP
+  - Src Port
+  - Source Port
+  - Dst Port
+  - Destination Port
+  - Protocol
+  label_candidates:
+  - Label
+  - label
+  - Class
+  - class
+  benign_label: BENIGN
+  scaler: robust
+  scaler_fit_mode: full_benign
+  feature_filter:
+    enable_nzv: true
+    nzv_threshold: 1.0e-06
+    enable_corr: true
+    corr_threshold: 0.9
+  scale_guard:
+    enable: true
+    raw_clip_quantile: 0.995
+    raw_clip_sample_rows: 200000
+    post_scale_clip_abs: 20.0
+  fillna_value: 0.0
+  window_size: 10
+  stride: 1
+  test_size: 0.15
+  val_size: 0.15
+  calib_size: 0.1
+  random_seed: 42
+  sample_frac: null
+  max_rows_per_file: 300000
+  chunksize: 50000
+  split_by_file: true
+  shard_enable: true
+  shard_dir: data/sprint5/s5_t04_target_p99/processed/shards
+  shard_size: 20000
+  write_combined: false
+training:
+  force_cpu: false
+  use_multi_gpu: true
+  batch_size: 512
+  epochs: 100
+  learning_rate: 0.001
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  min_lr: 1.0e-06
+  lr_scheduler: reduce_on_plateau
+  warmup_epochs: 0
+  restore_best_weights: true
+  clipnorm: 1.0
+  dropout: 0.2
+  recon_loss: mse
+  mse_mae_alpha: 0.7
+  export_latent_reference: false
+  cnn_filters:
+  - 64
+  - 128
+  cnn_kernel_size: 3
+  lstm_units:
+  - 128
+  - 64
+  latent_dim: 32
+threshold:
+  percentile: 99
+evaluation:
+  batch_size: 1024
+  sample_size: 0
+  mode: zero_shot
+  score_mode: recon_mse
+  hybrid_alpha: 0.7
+  source_calib_split: calib
+  threshold_method: target_percentile
+  threshold_k_sigma: 2.0
+  guardrail_fpr_max: 0.1
+  few_shot_benign_frac: 0.01
+  few_shot_max_samples: 50000
+  few_shot_finetune_epochs: 0
+  few_shot_finetune_lr: 0.0005
+  few_shot_finetune_batch_size: 256
+runtime_contract:
+  base_config_hash: b095223ef6403efcbe386f689cc36bdcc309608514e56207e2ffc09527950f90
+  effective_config_hash: dfb3074e37000e4dea70c9e27c981b2f34097e90cf6bfeda8b8d4aa0692710d0

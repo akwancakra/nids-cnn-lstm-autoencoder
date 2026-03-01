@@ -478,7 +478,7 @@ def main() -> None:
     ensure_dir(plots_dir)
     ensure_dir(metrics_dir)
 
-    model = tf.keras.models.load_model(args.model)
+    model = tf.keras.models.load_model(args.model, compile=False)
 
     eval_cfg = cfg.get("evaluation", {})
     eval_batch = int(eval_cfg.get("batch_size", 256))
@@ -538,6 +538,31 @@ def main() -> None:
             hybrid_alpha=hybrid_alpha,
         )
 
+        target_benign_errors = None
+        if threshold_method in ("target_percentile", "target_gaussian"):
+            cse_scores_pre, cse_labels_pre = collect_scores_from_shards(
+                model=model,
+                shard_files=cse_shards,
+                batch_size=eval_batch,
+                score_mode=score_mode,
+                latent_model=latent_model,
+                latent_mean=latent_mean,
+                latent_std=latent_std,
+                hybrid_alpha=hybrid_alpha,
+            )
+            if cse_labels_pre is None:
+                raise ValueError("target_percentile/target_gaussian require CSE shards with labels.")
+            benign_mask = cse_labels_pre == 0
+            target_benign_errors = cse_scores_pre[benign_mask].astype(np.float64)
+            sample_frac = float(eval_cfg.get("target_benign_sample_frac", 0.0))
+            if 0 < sample_frac < 1.0 and target_benign_errors.size > 0:
+                orig_n = target_benign_errors.size
+                rng = np.random.default_rng(42)
+                n = max(1, int(orig_n * sample_frac))
+                idx = rng.choice(orig_n, size=min(n, orig_n), replace=False)
+                target_benign_errors = target_benign_errors[idx]
+                logging.info("[STAGE] target_benign_sample_frac=%.2f -> subsampled %d of %d CSE benign", sample_frac, target_benign_errors.size, orig_n)
+
         if args.threshold is not None:
             threshold = float(args.threshold)
             logging.info("[OVERRIDE] Using manual threshold from CLI: %.8f", threshold)
@@ -546,7 +571,7 @@ def main() -> None:
                 method=threshold_method,
                 source_errors=source_scores,
                 source_labels=source_labels,
-                target_benign_errors=None,
+                target_benign_errors=target_benign_errors,
                 percentile=float(cfg["threshold"]["percentile"]),
                 k_sigma=threshold_k_sigma,
                 guardrail_fpr_max=guardrail_fpr_max,
